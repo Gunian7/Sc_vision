@@ -124,6 +124,12 @@ int main(int argc, char* argv[]) {
 
         auto yolo_start    = std::chrono::steady_clock::now();
         auto armors        = detector.detect(img);
+        cv::Rect roi_rect;
+        bool roi_active = false;
+        if (detector.get_debug_roi(roi_rect, roi_active) && roi_active && roi_rect.width > 0 && roi_rect.height > 0) {
+            cv::rectangle(img, roi_rect, cv::Scalar(0, 255, 255), 2);
+            tools::draw_text(img, "ROI", cv::Point(roi_rect.x, std::max(0, roi_rect.y - 8)), {0, 255, 255});
+        }
         total_armors += armors.size();  // 累加检测到的装甲板
         if (!armors.empty()) {
             detected_frames++;  // 累加检测成功的帧数

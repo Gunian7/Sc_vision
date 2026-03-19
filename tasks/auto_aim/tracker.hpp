@@ -49,6 +49,14 @@ private:
   bool jump_fire_cooldown_dynamic_;
   double outpost_jump_fire_cooldown_;
   double jump_min_interval_;
+  double process_noise_linear_normal_;
+  double process_noise_angular_normal_;
+  double process_noise_linear_outpost_;
+  double process_noise_angular_outpost_;
+  double measurement_noise_yaw_;
+  double measurement_noise_pitch_;
+  bool force_target_angular_velocity_;
+  double forced_target_angular_velocity_;
   std::string state_, pre_state_;
   Target target_;
   std::chrono::steady_clock::time_point last_timestamp_;

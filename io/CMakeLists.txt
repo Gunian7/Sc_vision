@@ -37,7 +37,7 @@ else()
   message(FATAL_ERROR "Unsupported architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
 endif()
 
-target_link_libraries(io MvCameraControl MVSDK usb-1.0 yaml-cpp serial)
+target_link_libraries(io MvCameraControl MVSDK usb-1.0 yaml-cpp serial fmt::fmt spdlog::spdlog tools)
 
 # serial_driver 是 ament 包，需要用 ament_target_dependencies 设置 include 和链接
 ament_target_dependencies(io serial_driver)

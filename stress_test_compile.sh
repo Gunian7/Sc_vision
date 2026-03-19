@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# 本脚本用于对 standard_mpc_se 进行压力测试，反复清理和编译，以检测系统在高负载下的稳定性。
 # 配置
 ITERATIONS=50
 PROJECT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

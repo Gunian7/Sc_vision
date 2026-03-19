@@ -3,6 +3,7 @@
 #include <fmt/chrono.h>
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
 #include <filesystem>
 
 #include "tools/img_tools.hpp"
@@ -247,7 +248,7 @@ void YOLOV5::draw_detections(
 void YOLOV5::save(const Armor & armor) const
 {
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
-  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, armor.name, file_name);
+  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, ARMOR_NAMES[armor.name], file_name);
   cv::imwrite(img_path, tmp_img_);
 }
 
@@ -263,6 +264,13 @@ std::list<Armor> YOLOV5::postprocess(
   double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
 {
   return parse(scale, output, bgr_img, frame_count);
+}
+
+bool YOLOV5::get_debug_roi(cv::Rect & roi, bool & active) const
+{
+  roi = roi_;
+  active = use_roi_;
+  return use_roi_;
 }
 
 }  // namespace auto_aim

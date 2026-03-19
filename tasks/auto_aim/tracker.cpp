@@ -35,6 +35,12 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   jump_fire_cooldown_dynamic_ = false;
   outpost_jump_fire_cooldown_ = 0.0;
   jump_min_interval_ = 0.0;
+  process_noise_linear_normal_ = 100.0;
+  process_noise_angular_normal_ = 400.0;
+  process_noise_linear_outpost_ = 10.0;
+  process_noise_angular_outpost_ = 0.1;
+  measurement_noise_yaw_ = 2e-3;
+  measurement_noise_pitch_ = 2e-3;
   if (yaml["jump_z_threshold"].IsDefined()) {
     jump_z_threshold_ = yaml["jump_z_threshold"].as<double>();
   }
@@ -68,6 +74,38 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
   if (yaml["jump_min_interval"].IsDefined()) {
     jump_min_interval_ = yaml["jump_min_interval"].as<double>();
+  }
+  if (yaml["target_process_noise_linear_normal"].IsDefined()) {
+    process_noise_linear_normal_ = yaml["target_process_noise_linear_normal"].as<double>();
+  }
+  if (yaml["target_process_noise_angular_normal"].IsDefined()) {
+    process_noise_angular_normal_ = yaml["target_process_noise_angular_normal"].as<double>();
+  }
+  if (yaml["target_process_noise_linear_outpost"].IsDefined()) {
+    process_noise_linear_outpost_ = yaml["target_process_noise_linear_outpost"].as<double>();
+  }
+  if (yaml["target_process_noise_angular_outpost"].IsDefined()) {
+    process_noise_angular_outpost_ = yaml["target_process_noise_angular_outpost"].as<double>();
+  }
+  if (yaml["target_measurement_noise_yaw"].IsDefined()) {
+    measurement_noise_yaw_ = yaml["target_measurement_noise_yaw"].as<double>();
+  }
+  if (yaml["target_measurement_noise_pitch"].IsDefined()) {
+    measurement_noise_pitch_ = yaml["target_measurement_noise_pitch"].as<double>();
+  }
+  force_target_angular_velocity_ = false;
+  forced_target_angular_velocity_ = 0.0;
+  if (yaml["force_target_angular_velocity"].IsDefined()) {
+    force_target_angular_velocity_ = yaml["force_target_angular_velocity"].as<bool>();
+  }
+  if (yaml["forced_target_angular_velocity"].IsDefined()) {
+    forced_target_angular_velocity_ = yaml["forced_target_angular_velocity"].as<double>();
+  }
+
+  if (force_target_angular_velocity_) {
+    tools::logger()->warn(
+      "[Tracker] force_target_angular_velocity=true, use fixed w={:.3f} rad/s",
+      forced_target_angular_velocity_);
   }
 }
 
@@ -290,27 +328,35 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
                      armor.name == ArmorName::five);
 
   if (is_balance) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1}};
+    Eigen::VectorXd P0_dig(11);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1;
     target_ = Target(armor, t, 0.2, 2, P0_dig);
   }
 
   else if (armor.name == ArmorName::outpost) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 1e-4}};
+    Eigen::VectorXd P0_dig(11);
+    P0_dig << 1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 1e-4;
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
   }
 
   else if (armor.name == ArmorName::base) {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1e-4, 0, 0}};
+    Eigen::VectorXd P0_dig(11);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1e-4, 0, 0;
     target_ = Target(armor, t, 0.3205, 3, P0_dig);
   }
 
   else {
-    Eigen::VectorXd P0_dig{{1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1}};
+    Eigen::VectorXd P0_dig(11);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1;
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
   target_.set_jump_params(jump_z_threshold_, jump_confirm_count_);
   target_.set_jump_avg_alpha(jump_avg_alpha_);
+  target_.set_process_noise(
+    process_noise_linear_normal_, process_noise_angular_normal_, process_noise_linear_outpost_,
+    process_noise_angular_outpost_);
+  target_.set_measurement_noise(measurement_noise_yaw_, measurement_noise_pitch_);
   if (armor.name == ArmorName::outpost && outpost_jump_fire_cooldown_ > 0.0) {
     target_.set_jump_fire_cooldown(outpost_jump_fire_cooldown_);
   } else if (jump_fire_cooldown_dynamic_) {
@@ -321,6 +367,9 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     target_.set_jump_fire_cooldown(jump_fire_cooldown_);
   }
   target_.set_jump_min_interval(jump_min_interval_);
+  if (force_target_angular_velocity_) {
+    target_.set_angular_velocity(forced_target_angular_velocity_);
+  }
 
   return true;
 }
@@ -328,30 +377,19 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
 bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock::time_point t)
 {
   target_.predict(t);
-
-  int found_count = 0;
-  double min_x = 1e10;  // 画面最左侧
-  for (const auto & armor : armors) {
-    if (armor.name != target_.name || armor.type != target_.armor_type) continue;
-    found_count++;
-    min_x = armor.center.x < min_x ? armor.center.x : min_x;
+  if (force_target_angular_velocity_) {
+    target_.set_angular_velocity(forced_target_angular_velocity_);
   }
-
-  if (found_count == 0) return false;
 
   for (auto & armor : armors) {
-    if (
-      armor.name != target_.name || armor.type != target_.armor_type
-      //  || armor.center.x != min_x
-    )
-      continue;
+    if (armor.name != target_.name || armor.type != target_.armor_type) continue;
 
     solver_.solve(armor);
-
     target_.update(armor);
+    return true;
   }
 
-  return true;
+  return false;
 }
 
 }  // namespace auto_aim

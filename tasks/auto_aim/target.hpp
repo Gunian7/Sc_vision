@@ -52,7 +52,12 @@ public:
   void set_jump_fire_cooldown_params(
     double min_seconds, double max_seconds, double speed_start, double speed_end);
   void set_jump_min_interval(double seconds);
+  void set_process_noise(
+    double linear_acc_normal, double angular_acc_normal, double linear_acc_outpost,
+    double angular_acc_outpost);
+  void set_measurement_noise(double yaw_noise, double pitch_noise);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
+  void set_angular_velocity(double angular_velocity);
 
   bool isinit = false;
 
@@ -85,6 +90,12 @@ private:
   double jump_fire_cooldown_speed_start_;
   double jump_fire_cooldown_speed_end_;
   double jump_min_interval_;
+  double process_noise_linear_normal_;
+  double process_noise_angular_normal_;
+  double process_noise_linear_outpost_;
+  double process_noise_angular_outpost_;
+  double measurement_noise_yaw_;
+  double measurement_noise_pitch_;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;

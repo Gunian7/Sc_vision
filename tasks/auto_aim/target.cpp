@@ -33,6 +33,12 @@ Target::Target(
   jump_fire_cooldown_speed_start_(0.0),
   jump_fire_cooldown_speed_end_(0.0),
   jump_min_interval_(0.0),
+  process_noise_linear_normal_(100.0),
+  process_noise_angular_normal_(400.0),
+  process_noise_linear_outpost_(10.0),
+  process_noise_angular_outpost_(0.1),
+  measurement_noise_yaw_(2e-3),
+  measurement_noise_pitch_(2e-3),
   t_(t)
 {
   auto r = radius;
@@ -62,7 +68,8 @@ Target::Target(
   // w: angular velocity
   // l: r2 - r1
   // h: z2 - z1
-  Eigen::VectorXd x0{{center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, height_step}};  //初始化预测量
+  Eigen::VectorXd x0(11);
+  x0 << center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, height_step;  //初始化预测量
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   // 防止夹角求和出现异常值
@@ -77,8 +84,10 @@ Target::Target(
 
 Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
 {
-  Eigen::VectorXd x0{{x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h}};
-  Eigen::VectorXd P0_dig{{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}};
+  Eigen::VectorXd x0(11);
+  x0 << x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h;
+  Eigen::VectorXd P0_dig(11);
+  P0_dig << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   height_offsets_.fill(0.0);
@@ -98,6 +107,12 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   jump_fire_cooldown_speed_start_ = 0.0;
   jump_fire_cooldown_speed_end_ = 0.0;
   jump_min_interval_ = 0.0;
+  process_noise_linear_normal_ = 100.0;
+  process_noise_angular_normal_ = 400.0;
+  process_noise_linear_outpost_ = 10.0;
+  process_noise_angular_outpost_ = 0.1;
+  measurement_noise_yaw_ = 2e-3;
+  measurement_noise_pitch_ = 2e-3;
   for (auto & samples : height_samples_) {
     samples.clear();
   }
@@ -142,11 +157,11 @@ void Target::predict(double dt)
   // https://github.com/rlabbe/Kalman-and-Bayesian-Filters-in-Python/blob/master/07-Kalman-Filter-Math.ipynb
   double v1, v2;
   if (name == ArmorName::outpost) {
-    v1 = 10;   // 前哨站加速度方差
-    v2 = 0.1;  // 前哨站角加速度方差
+    v1 = process_noise_linear_outpost_;   // 前哨站加速度方差
+    v2 = process_noise_angular_outpost_;  // 前哨站角加速度方差
   } else {
-    v1 = 100;  // 加速度方差
-    v2 = 400;  // 角加速度方差
+    v1 = process_noise_linear_normal_;   // 加速度方差
+    v2 = process_noise_angular_normal_;  // 角加速度方差
   }
   auto a = dt * dt * dt * dt / 4;
   auto b = dt * dt * dt / 2;
@@ -331,9 +346,10 @@ void Target::update_ypda(const Armor & armor, int id)
   // Eigen::VectorXd R_dig{{4e-3, 4e-3, 1, 9e-2}};
   auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
   auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
-  Eigen::VectorXd R_dig{
-    {4e-3, 4e-3, log(std::abs(delta_angle) + 1) + 1,
-     log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 9e-2}};
+  Eigen::VectorXd R_dig(4);
+  R_dig << measurement_noise_yaw_, measurement_noise_pitch_,
+    log(std::abs(delta_angle) + 1) + 0.5,
+    log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 4.5e-2;
 
   //测量过程噪声偏差的方差
   Eigen::MatrixXd R = R_dig.asDiagonal();
@@ -357,7 +373,8 @@ void Target::update_ypda(const Armor & armor, int id)
 
   const Eigen::VectorXd & ypd = armor.ypd_in_world;
   const Eigen::VectorXd & ypr = armor.ypr_in_world;
-  Eigen::VectorXd z{{ypd[0], ypd[1], ypd[2], ypr[0]}};  //获得观测量
+  Eigen::VectorXd z(4);
+  z << ypd[0], ypd[1], ypd[2], ypr[0];  //获得观测量
 
   ekf_.update(z, H, R, h, z_subtract);
 }
@@ -519,11 +536,29 @@ void Target::set_jump_min_interval(double seconds)
   jump_min_interval_ = std::max(0.0, seconds);
 }
 
+void Target::set_process_noise(
+  double linear_acc_normal, double angular_acc_normal, double linear_acc_outpost,
+  double angular_acc_outpost)
+{
+  process_noise_linear_normal_ = std::max(0.0, linear_acc_normal);
+  process_noise_angular_normal_ = std::max(0.0, angular_acc_normal);
+  process_noise_linear_outpost_ = std::max(0.0, linear_acc_outpost);
+  process_noise_angular_outpost_ = std::max(0.0, angular_acc_outpost);
+}
+
+void Target::set_measurement_noise(double yaw_noise, double pitch_noise)
+{
+  measurement_noise_yaw_ = std::max(1e-9, yaw_noise);
+  measurement_noise_pitch_ = std::max(1e-9, pitch_noise);
+}
+
 bool Target::in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const
 {
   if (!has_jump_time_ || jump_fire_cooldown_ <= 0.0) return false;
   auto age = std::chrono::duration<double>(t - last_jump_time_).count();
   return age >= 0.0 && age <= jump_fire_cooldown_;
 }
+
+void Target::set_angular_velocity(double angular_velocity) { ekf_.x[7] = angular_velocity; }
 
 }  // namespace auto_aim

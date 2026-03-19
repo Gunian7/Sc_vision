@@ -269,7 +269,7 @@ cv::Mat YOLOV8::get_pattern(const cv::Mat & bgr_img, const Armor & armor) const
 void YOLOV8::save(const Armor & armor) const
 {
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
-  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, armor.name, file_name);
+  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, ARMOR_NAMES[armor.name], file_name);
   cv::imwrite(img_path, armor.pattern);
 }
 
@@ -325,6 +325,13 @@ std::list<Armor> YOLOV8::postprocess(
   double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
 {
   return parse(scale, output, bgr_img, frame_count);
+}
+
+bool YOLOV8::get_debug_roi(cv::Rect & roi, bool & active) const
+{
+  roi = roi_;
+  active = use_roi_;
+  return use_roi_;
 }
 
 }  // namespace auto_aim

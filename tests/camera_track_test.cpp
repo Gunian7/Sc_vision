@@ -43,6 +43,8 @@ int main(int argc, char * argv[])
   }
   auto config_path  = cli.get<std::string>(0);
   double bullet_speed = cli.get<double>("speed");
+  std::string plotter_host = "10.2.20.200";
+  int plotter_port = 9870;
 
   double jump_pitch_up_duration   = 0.0;
   double jump_pitch_down_duration = 0.0;
@@ -57,13 +59,18 @@ int main(int argc, char * argv[])
       jump_pitch_down_duration = yaml["jump_pitch_down_duration"].as<double>();
     if (yaml["decision_speed"].IsDefined())
       decision_speed = yaml["decision_speed"].as<double>();
+    if (yaml["plotter_host"].IsDefined())
+      plotter_host = yaml["plotter_host"].as<std::string>();
+    if (yaml["plotter_port"].IsDefined())
+      plotter_port = yaml["plotter_port"].as<int>();
   } catch (...) {}
 
   tools::logger()->info("bullet_speed={:.1f} m/s  decision_speed={:.1f} rad/s (无下位机模式)",
                         bullet_speed, decision_speed);
+  tools::logger()->info("Plotter UDP -> {}:{}", plotter_host, plotter_port);
 
   tools::Exiter exiter;
-  tools::Plotter plotter;
+  tools::Plotter plotter(plotter_host, static_cast<uint16_t>(plotter_port));
 
   io::Camera camera(config_path);
   auto_aim::YOLO    yolo(config_path, true);

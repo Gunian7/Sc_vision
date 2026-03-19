@@ -41,4 +41,9 @@ std::list<Armor> YOLO::postprocess(
   return yolo_->postprocess(scale, output, bgr_img, frame_count);
 }
 
+bool YOLO::get_debug_roi(cv::Rect & roi, bool & active) const
+{
+  return yolo_->get_debug_roi(roi, active);
+}
+
 }  // namespace auto_aim

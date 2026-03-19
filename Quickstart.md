@@ -58,9 +58,9 @@ cmake --build build --target standard_mpc_se -j$(nproc)
 #### MindVision 工业相机识别测试（`camera_detect_test`）
 使用 MindVision 工业相机实时采图并运行识别（包含 Detector 与 YOLO）：
 ```bash
-./build/camera_detect_test configs/sentry_blue.yaml
+./build/camera_detect_test configs/right.yaml
 # 显示识别画面（需要有显示器）
-./build/camera_detect_test configs/sentry_blue.yaml --display
+./build/camera_detect_test configs/right.yaml --display
 ```
 > 可加 `--tradition=true` 切换为传统识别方法。
 
@@ -94,6 +94,53 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 > 可通过 `--speed=15.0` 覆盖 yaml 中的弹速。
 
 ---
+
+### 打符（Buff）测试
+
+#### 在线实时打符（独立程序）
+
+适合单独调试打符链路（`Detector -> Solver -> Target -> Aimer`）：
+
+```bash
+./build/auto_buff_debug configs/standard3.yaml
+```
+
+若需要 MPC 版本调试：
+
+```bash
+./build/auto_buff_debug_mpc configs/standard3.yaml
+```
+
+> `auto_buff_debug` 源码当前默认是小符目标（`SmallTarget`）。如需固定调大符，可切换为 `BigTarget` 分支后重新编译。
+
+#### 在线模式切换运行（推荐实车）
+
+`mt_standard` 同时包含自瞄与打符流程，按下位机模式切换：
+- `auto_aim`：自瞄
+- `small_buff`：小符
+- `big_buff`：大符
+
+```bash
+./build/mt_standard configs/standard3.yaml
+```
+
+#### 离线录像打符测试（无需相机/下位机）
+
+`auto_buff_test` 使用录像回放，输入为同名 `avi/txt`：
+
+```bash
+./build/auto_buff_test --config-path=configs/standard3.yaml records/buff_demo
+```
+
+上面命令会读取：
+- `records/buff_demo.avi`
+- `records/buff_demo.txt`
+
+可选截取帧区间：
+
+```bash
+./build/auto_buff_test --config-path=configs/standard3.yaml --start-index=100 --end-index=1200 records/buff_demo
+```
 
 ## 开机自启 (Autostart)
 

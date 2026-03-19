@@ -14,6 +14,13 @@ public:
 
   virtual std::list<Armor> postprocess(
     double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count) = 0;
+
+  virtual bool get_debug_roi(cv::Rect & roi, bool & active) const
+  {
+    (void)roi;
+    (void)active;
+    return false;
+  }
 };
 
 class YOLO
@@ -25,6 +32,8 @@ public:
 
   std::list<Armor> postprocess(
     double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count);
+
+  bool get_debug_roi(cv::Rect & roi, bool & active) const;
 
 private:
   std::unique_ptr<YOLOBase> yolo_;

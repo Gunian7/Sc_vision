@@ -40,6 +40,14 @@ jump_confirm_count: 2
 jump_avg_alpha: 0.5
 jump_fire_cooldown: 0.0 # s
 jump_min_interval: 0.0 # s
+target_process_noise_linear_normal: 100.0
+target_process_noise_angular_normal: 400.0
+target_process_noise_linear_outpost: 10.0
+target_process_noise_angular_outpost: 0.1
+target_measurement_noise_yaw: 0.002
+target_measurement_noise_pitch: 0.002
+force_target_angular_velocity: false
+forced_target_angular_velocity: 0.0 # rad/s
 
 #####-----aimer参数-----#####
 yaw_offset: 2   # degree 2

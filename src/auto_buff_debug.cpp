@@ -147,7 +147,7 @@ int main(int argc, char * argv[])
 
     plotter.plot(data);
 
-    cv::resize(img, img, {}, 0.5, 0.5);
+    cv::resize(img, img, {}, 0.7, 0.7);
     cv::imshow("result", img);
 
     auto key = cv::waitKey(1);
