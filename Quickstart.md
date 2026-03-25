@@ -27,6 +27,26 @@ cmake --build build --target standard_mpc_se -j$(nproc)
 
 > 配置文件按机器人选择，`standard3.yaml` / `standard4.yaml` 等对应不同机器人。
 
+#### 可选识别模型：RP24-DetectionModel
+
+本仓库已支持将 `RobotDetectionModel`（RP24）作为可选识别模型接入。
+
+1. 将导出的模型放到仓库 `assets/`（示例：`assets/rp24_0526.onnx`）。  
+2. 在 yaml 中增加模型路径并切换模型名：
+
+```yaml
+yolo_name: rp24
+rp24_model_path: assets/rp24_0526.onnx
+```
+
+3. 运行方式不变，例如：
+
+```bash
+./build/standard_mpc_se configs/right.yaml
+```
+
+> 说明：`rp24` 复用了当前 YOLOv5 的关键点解码流程，适用于输出格式为“8关键点 + 置信度 + 颜色分类 + 数字分类”的模型。
+
 ---
 
 ### 单元测试
@@ -149,7 +169,7 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 ### 步骤 1：确保脚本有执行权限
 
 ```bash
-chmod +x /home/setsuna/RM/AutoAim/sp_vision_25/watchdog.sh
+chmod +x /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
 ```
 
 ### 步骤 2：确认 watchdog.sh 配置正确

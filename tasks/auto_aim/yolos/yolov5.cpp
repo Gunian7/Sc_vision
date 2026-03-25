@@ -16,7 +16,15 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
 {
   auto yaml = YAML::LoadFile(config_path);
 
-  model_path_ = yaml["yolov5_model_path"].as<std::string>();
+  auto yolo_name = yaml["yolo_name"].as<std::string>();
+  if (yolo_name == "rp24") {
+    if (!yaml["rp24_model_path"].IsDefined()) {
+      throw std::runtime_error("yolo_name=rp24 but rp24_model_path is not defined in yaml");
+    }
+    model_path_ = yaml["rp24_model_path"].as<std::string>();
+  } else {
+    model_path_ = yaml["yolov5_model_path"].as<std::string>();
+  }
   device_ = yaml["device"].as<std::string>();
   binary_threshold_ = yaml["threshold"].as<double>();
   min_confidence_ = yaml["min_confidence"].as<double>();
