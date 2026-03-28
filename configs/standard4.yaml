@@ -1,8 +1,8 @@
-# enemy_color: "red"
+# enemy_color: "red"   使用yolo11的版本，推理速度过慢，50FPS
 enemy_color: "blue"
 
 #####-----神经网络参数-----#####
-yolo_name: yolo11
+yolo_name: yolov5
 classify_model: assets/tiny_resnet.onnx
 yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
@@ -13,13 +13,18 @@ min_confidence: 0.65
 use_traditional: true
 
 #####-----ROI-----#####
+
 roi: 
-  x: 360
-  y: 680
-  width: 600
-  height: 300
+  x: 240
+  y: 420
+  width: 800
+  height: 560
 
 use_roi: true
+
+dynamic_roi: true
+dynamic_roi_shrink_frames: 100
+dynamic_roi_lost_frames: 5
 
 #####-----传统方法参数-----#####
 threshold: 150
@@ -33,7 +38,7 @@ max_side_ratio: 1.5
 max_rectangular_error: 25 # degree
 
 #####-----tracker参数-----#####
-min_detect_count: 4
+min_detect_count: 5
 max_temp_lost_count: 15
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
 outpost_leaving_angle: 30 # degree 前哨站离开视野角度
@@ -55,14 +60,14 @@ jump_pitch_up_duration: 0.15 # s
 jump_pitch_down_duration: 0.25 # s
 jump_min_interval: 0.1 # s 跳变最小间隔
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
-target_process_noise_linear_normal: 200.0  #100
-target_process_noise_angular_normal: 50.0  #400
+target_process_noise_linear_normal: 100.0  #100
+target_process_noise_angular_normal: 400.0  #400
 target_process_noise_linear_outpost: 10.0
 target_process_noise_angular_outpost: 0.1
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
-target_measurement_noise_yaw: 1.0    #0.002
+target_measurement_noise_yaw: 0.02    #0.002
 target_measurement_noise_pitch: 0.002
-force_target_angular_velocity: true    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），
+force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），
 forced_target_angular_velocity: 2.51 # rad/s
 #####-----aimer参数-----#####
 yaw_offset: 1.6   # degree 1.5
@@ -86,9 +91,9 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "mindvision"
-exposure_ms: 3.3
+exposure_ms: 5.0
 gamma: 1.0
-gain: 20.0   
+gain: 500.0   
 vid_pid: "f622:0001"
 
 #  效果较好的一版 ，参数勿删
@@ -135,13 +140,14 @@ can_interface: "can0"
 phoenix_angle_unit: rad   # 下位机若发送角度(度)则设为deg，发送弧度则改为rad
 imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
-use_default_bullet_speed: false # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
+use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
+use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 5.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
 target_stabilize_alpha: 0.3            # 平滑系数(0.0~1.0)，越小越平滑(推荐0.1~0.5)，0表示完全保持上一值，1表示完全新值
-enable_target_stabilize: true          # 是否启用平滑过渡机制
+enable_target_stabilize: false          # 是否启用平滑过渡机制
 
 #####-----plotter参数-----#####
 plotter_host: "127.0.0.1"

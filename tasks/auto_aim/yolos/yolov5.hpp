@@ -29,6 +29,14 @@ private:
   std::string device_, model_path_;
   std::string save_path_, debug_path_;
   bool debug_, use_roi_, use_traditional_;
+  bool use_dynamic_roi_ = false;
+    int dynamic_roi_shrink_frames_ = 30;
+    int dynamic_roi_lost_frames_ = 3;
+    int consecutive_tracking_frames_ = 0;
+    int consecutive_lost_frames_ = 0;
+    cv::Rect target_roi_;
+    cv::Rect full_roi_;
+    bool dynamic_roi_initialized_ = false;
 
   const int class_num_ = 13;
   const float nms_threshold_ = 0.3;

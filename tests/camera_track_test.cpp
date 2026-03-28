@@ -92,6 +92,12 @@ int main(int argc, char * argv[])
     solver.set_R_gimbal2world(identity_q);
 
     auto armors  = yolo.detect(img);
+    cv::Rect roi_rect;
+    bool roi_active = false;
+    if (yolo.get_debug_roi(roi_rect, roi_active)) {
+      tools::logger()->info("[ROI] active={}, x={}, y={}, w={}, h={}",
+        roi_active, roi_rect.x, roi_rect.y, roi_rect.width, roi_rect.height);
+    }
     auto targets = tracker.track(armors, t);
     auto command = aimer.aim(targets, t, bullet_speed);
 

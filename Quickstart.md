@@ -42,7 +42,7 @@ rp24_model_path: assets/rp24_0526.onnx
 3. 运行方式不变，例如：
 
 ```bash
-./build/standard_mpc_se configs/right.yaml
+./build/standard_mpc_se configs/standard4.yaml
 ```
 
 > 说明：`rp24` 复用了当前 YOLOv5 的关键点解码流程，适用于输出格式为“8关键点 + 置信度 + 颜色分类 + 数字分类”的模型。
@@ -79,8 +79,9 @@ rp24_model_path: assets/rp24_0526.onnx
 使用 MindVision 工业相机实时采图并运行识别（包含 Detector 与 YOLO）：
 ```bash
 ./build/camera_detect_test configs/right.yaml
-# 显示识别画面（需要有显示器）
+# 显示识别画面（需要有显示器）（哨兵）
 ./build/camera_detect_test configs/right.yaml --display
+./build/camera_detect_test configs/standard3.yaml --display  
 ```
 > 可加 `--tradition=true` 切换为传统识别方法。
 

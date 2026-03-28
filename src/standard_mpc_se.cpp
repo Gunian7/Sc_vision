@@ -2,6 +2,7 @@
 #include <array>
 #include <algorithm>
 #include <chrono>
+#include <memory>
 #include <cmath>
 #include <vector>
 #include <string>
@@ -33,7 +34,8 @@ using namespace std::chrono;
 
 const std::string keys =
     "{help h usage ? |      | 输出命令行参数说明}"
-    "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
+    "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
+    "{use_identity_pose | false | 是否使用单位四元数(无下位机模式)}";
 
 int main(int argc, char* argv[]) {
     cv::CommandLineParser cli(argc, argv, keys);
@@ -46,7 +48,8 @@ int main(int argc, char* argv[]) {
     double jump_pitch_up_duration = 0.0;
     double jump_pitch_down_duration = 0.0;
     double decision_speed = 0.0;
-    bool use_identity_pose = false;
+    double config_bullet_speed = 21.0;
+    bool use_identity_pose = false;  // 是否使用单位四元数作为云台姿态（调试用）
     double target_jump_angle_threshold_deg = 5.0;   // 判定为"大跳变"的阈值（度）
     double target_stabilize_alpha = 0.3;             // 平滑系数，越小越平滑（推荐0.1~0.5）
     bool enable_target_stabilize = true;             // 是否启用平滑过渡
@@ -73,9 +76,15 @@ int main(int argc, char* argv[]) {
         if (yaml["enable_target_stabilize"].IsDefined()) {
             enable_target_stabilize = yaml["enable_target_stabilize"].as<bool>();
         }
+        if (yaml["bullet_speed"].IsDefined()) {
+            config_bullet_speed = yaml["bullet_speed"].as<double>();
+        }
     } catch (const YAML::Exception & e) {
         tools::logger()->warn("Failed to read configuration: {}", e.what());
     }
+
+
+    tools::logger()->info("[standard_mpc_se] use_identity_pose={}, config_bullet_speed={}", use_identity_pose, config_bullet_speed);
 
     if (use_identity_pose) {
         tools::logger()->warn("[Debug] use_identity_pose=true, IMU quaternion from CBoard is ignored.");
@@ -85,7 +94,10 @@ int main(int argc, char* argv[]) {
     tools::Plotter plotter;
     tools::Recorder recorder;
 
-    io::CBoard cboard(config_path);
+    std::unique_ptr<io::CBoard> cboard;
+    if (!use_identity_pose) {
+        cboard = std::make_unique<io::CBoard>(config_path);
+    }
     io::Camera camera(config_path);
 
     auto_aim::YOLO detector(config_path, false);
@@ -110,8 +122,8 @@ int main(int argc, char* argv[]) {
 
     while (!exiter.exit()) {
         camera.read(img, t);
-        q    = use_identity_pose ? Eigen::Quaterniond::Identity() : cboard.imu_at(t - 1ms);
-        mode = cboard.mode;
+        q    = use_identity_pose ? Eigen::Quaterniond::Identity() : cboard->imu_at(t - 1ms);
+        mode = (use_identity_pose || !cboard) ? io::Mode::auto_aim : cboard->mode;
 
         if (last_mode != mode) {
             tools::logger()->info("Switch to {}", io::MODES[mode].c_str());
@@ -137,10 +149,11 @@ int main(int argc, char* argv[]) {
         auto tracker_start = std::chrono::steady_clock::now();
         auto targets       = tracker.track(armors, t);
         auto aimer_start   = std::chrono::steady_clock::now();
-        auto command       = aimer.aim(targets, t, cboard.bullet_speed);
+        double active_bullet_speed = (cboard ? cboard->bullet_speed : config_bullet_speed);
+        auto command       = aimer.aim(targets, t, active_bullet_speed);
         
         if (!targets.empty()) {
-            auto plan = planner.plan(targets.front(), cboard.bullet_speed);
+            auto plan = planner.plan(targets.front(), active_bullet_speed);
             if (plan.control) {
                 command.yaw       = plan.yaw;
                 command.pitch     = plan.pitch;
@@ -160,13 +173,13 @@ int main(int argc, char* argv[]) {
             last_command = command;
         }
 
-        // tools::logger()->info(
-        //     "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, aimer: {:.1f}ms",
-        //     frame_count,
-        //     tools::delta_time(tracker_start, yolo_start) * 1e3,
-        //     tools::delta_time(aimer_start, tracker_start) * 1e3,
-        //     tools::delta_time(finish, aimer_start) * 1e3
-        // );
+        tools::logger()->info(
+            "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, aimer: {:.1f}ms",
+            frame_count,
+            tools::delta_time(tracker_start, yolo_start) * 1e3,
+            tools::delta_time(aimer_start, tracker_start) * 1e3,
+            tools::delta_time(finish, aimer_start) * 1e3
+        );
 
         auto yaw                    = ypr[0];
 
@@ -330,7 +343,9 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        cboard.send(command);
+        if (cboard) {
+            cboard->send(command);
+        }
         frame_count++;
     }
         // 在程序结束时输出识别率

@@ -30,9 +30,6 @@ roi:
 use_roi: true
 
 dynamic_roi: false
-dynamic_roi_padding: 80
-dynamic_roi_min_width: 320
-dynamic_roi_min_height: 240
 
 #####-----传统方法参数-----#####
 threshold: 150
