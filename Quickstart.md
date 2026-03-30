@@ -1,5 +1,12 @@
 # 快速开始 (Quickstart)
 
+# 安装依赖
+在终端中运行setup.bash脚本安装依赖：
+（注意ROS版本）
+```bash
+bash setup.bash
+```
+
 ## 编译 (Build)
 
 ```bash
@@ -12,14 +19,17 @@ cmake --build build -j$(nproc)
 ```bash
 cmake --build build --target standard_mpc_se -j$(nproc)
 ```
-
----
+io部分需要单独colcon build编译，不然找不到对应的serial：（如果还有报错请移步询问ai）
+```bash
+cd io
+colcon build --symlink-install
+```
 
 ## 运行 (Run)
 
 ### 主程序
 
-**当前标准步兵自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑：
+**当前标准步兵自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑,需要注意的是.yaml文件众多，但是不一定都是对的，需要自己辨别，一般来说，standard.yaml是正常的可以直接使用：
 
 ```bash
 ./build/standard_mpc_se configs/standard3.yaml
@@ -143,6 +153,10 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 
 ```bash
 ./build/mt_standard configs/standard3.yaml
+```
+#### 云台响应测试（无需相机/下位机），发送步兵云台信号，观察响应曲线，修改mode即可改变相应轨迹：
+```
+./build/gimbal_response_test configs/standard4.yaml --signal-mode=step --axis yaw
 ```
 
 #### 离线录像打符测试（无需相机/下位机）
