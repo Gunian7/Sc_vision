@@ -35,7 +35,9 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
   height = yaml["roi"]["height"].as<int>();
   use_roi_ = yaml["use_roi"].as<bool>();
   use_traditional_ = yaml["use_traditional"].as<bool>();
-  
+  if (yaml["num_infer_requests"].IsDefined()) {
+    num_requests_ = yaml["num_infer_requests"].as<int>();
+  }
   if (yaml["use_dynamic_roi"].IsDefined()) {
     use_dynamic_roi_ = yaml["use_dynamic_roi"].as<bool>();
   }
@@ -84,7 +86,16 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
   model = ppp.build();
   compiled_model_ = core_.compile_model(
     model, device_, ov::hint::performance_mode(ov::hint::PerformanceMode::LATENCY));
+
+  // create infer request pool
+  infer_pool_ = std::make_unique<InferRequestPool>(compiled_model_, num_requests_);
 }
+  // // 多InferRequest
+  // for (int i = 0; i < num_requests_; ++i) {
+  //   infer_requests_.emplace_back(compiled_model_.create_infer_request());
+  //   free_infer_request_indices_.push(i);
+  // }
+  // tools::logger()->info("[YOLOV5] initialized , num_requests: {}", num_requests_);
 
 std::list<Armor> YOLOV5::detect(const cv::Mat & raw_img, int frame_count)
 {
@@ -146,8 +157,19 @@ std::list<Armor> YOLOV5::detect(const cv::Mat & raw_img, int frame_count)
   cv::resize(bgr_img, input(roi), {w, h});
   ov::Tensor input_tensor(ov::element::u8, {1, 640, 640, 3}, input.data);
 
-  // infer
-  auto infer_request = compiled_model_.create_infer_request();
+  // infer using pooled InferRequest
+  if (!infer_pool_) {
+    tools::logger()->warn("Infer pool not initialized, dropping frame {}", frame_count);
+    return std::list<Armor>();
+  }
+
+  auto lease = infer_pool_->acquire_lease();
+  if (!lease.valid()) {
+    tools::logger()->warn("No free infer request available, dropping frame {}", frame_count);
+    return std::list<Armor>();
+  }
+
+  auto & infer_request = lease.request();
   infer_request.set_input_tensor(input_tensor);
   infer_request.infer();
 
