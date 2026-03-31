@@ -13,7 +13,8 @@
 #include "tools/logger.hpp"
 #include "tools/thread_safe_queue.hpp"
 
-#include "io/serial_phoenix/include/serial.hpp"
+
+#include "io/serial_phoenix_async/serial/serial_session.hpp"
 
 namespace io {
 enum Mode { idle, auto_aim, small_buff, big_buff, outpost };
@@ -48,6 +49,37 @@ typedef struct Message_phoenix_s {
     uint8_t type;
     uint8_t data[29];
     uint8_t tail;
+    
+    // 转换为 vector<char>
+    std::vector<char> toBytes() const {
+        std::vector<char> bytes(sizeof(*this));
+        std::memcpy(bytes.data(), this, sizeof(*this));
+        return bytes;
+    }
+    
+    // 从 vector<char> 还原（静态方法）
+    static Message_phoenix_s fromBytes(const std::vector<char>& bytes) {
+        Message_phoenix_s msg;
+        if (bytes.size() >= sizeof(msg)) {
+            std::memcpy(&msg, bytes.data(), sizeof(msg));
+        }
+        return msg;
+    }
+    
+    // 从字节流填充（成员方法）
+    bool loadFromBytes(const std::vector<char>& bytes) {
+        if (bytes.size() < sizeof(*this)) {
+            return false;
+        }
+        std::memcpy(this, bytes.data(), sizeof(*this));
+        return true;
+    }
+    
+    // 验证消息有效性
+    bool isValid() const {
+        return header == 0xAA && tail == 0x55;
+    }
+    
 } Message_phoenix;
 
 #pragma pack()
@@ -98,7 +130,8 @@ private:
 
     void read_fun_1(Message_phoenix& msg);
 
-    serial_phoenix::Serial serial_;
+    asio::io_context io_context_;
+    session::serial::SerialSession serial_;
     std::vector<uint8_t> read_buffer_;
     std::vector<uint8_t> write_buffer_;
 };

@@ -3,6 +3,7 @@
 #include "Eigen/src/Core/AssignEvaluator.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
 
 namespace io {
@@ -10,22 +11,24 @@ CBoard::CBoard(const std::string& config_path):
     bullet_speed(21.0),
     mode(Mode::idle),
     shoot_mode(ShootMode::left_shoot),
-    queue_(5000) {
-    auto yaml          = YAML::LoadFile(config_path);
+    queue_(5000),
+    io_context_(),
+    serial_(io_context_) {
+    auto yaml = YAML::LoadFile(config_path);
 
     if (yaml["bullet_speed"]) {
         default_bullet_speed_ = yaml["bullet_speed"].as<double>();
-        bullet_speed = default_bullet_speed_;
+        bullet_speed          = default_bullet_speed_;
     }
 
     if (yaml["use_default_bullet_speed"]) {
         use_default_bullet_speed_ = yaml["use_default_bullet_speed"].as<bool>();
     }
 
-
     if (yaml["phoenix_angle_unit"]) {
         auto unit = yaml["phoenix_angle_unit"].as<std::string>();
-        for (auto& c: unit) c = static_cast<char>(std::tolower(c));
+        for (auto& c: unit)
+            c = static_cast<char>(std::tolower(c));
         phoenix_angles_in_degrees_ = (unit == "deg" || unit == "degree" || unit == "degrees");
     }
 
@@ -50,46 +53,43 @@ CBoard::CBoard(const std::string& config_path):
 
     this->read_buffer_.resize(32);
     this->write_buffer_.resize(32);
-    this->serial_ = serial_phoenix::Serial();
 
-    auto code = this->serial_.open(findFirstACMDevice(), nullptr, 32);
-    if (!code) {
-        tools::logger()->warn("[Cboard] Serial port not opened: {}", static_cast<int>(code.code()));
+    try {
+        session::serial::SerialPortConfig config;
+        asio::error_code ec;
+        ec = serial_.open(config);
+        if (ec) {
+            tools::logger()->error("[Gimbal] Failed to open serial: {}", ec.message());
+            exit(1);
+        }
+    } catch (const std::exception& e) {
+        tools::logger()->error("[Gimbal] Failed to open serial: {}", e.what());
+        exit(1);
     }
     this->start();
     // Use default values to prevent blocking startup if serial is silent
-    data_ahead_ = { Eigen::Quaterniond::Identity(), std::chrono::steady_clock::now() };
+    data_ahead_  = { Eigen::Quaterniond::Identity(), std::chrono::steady_clock::now() };
     data_behind_ = data_ahead_;
     tools::logger()->info("[Cboard] Opened.");
 }
 
 void CBoard::start() {
-    std::thread Link_thread([this] {
-        while (true) {
-            this->serial_.read(this->read_buffer_);
-            // std::cout << "Data received from serial port." << std::endl;
-            // for (auto it = this->read_buffer_.begin(); it != this->read_buffer_.end(); ++it) {
-            //     std::cout << std::hex << static_cast<int>(*it) << " ";
-            // }
-            // std::cout << std::dec;
-            // std::cout << std::endl;
+    this->serial_.set_read_handler([&](asio::error_code /*ec*/, const std::vector<char>& data) {
+
             // 解析数据
-            uint8_t type = this->read_buffer_[1];
-            // std::cout << "a." << std::endl;
+            uint8_t type = data[1];
 
             std::vector<uint8_t> buffer(29);
 
-            std::memcpy(buffer.data(), this->read_buffer_.data() + 2, 29);
+            std::memcpy(buffer.data(), data.data() + 2, 29);
             if (type == 0xb0) {
-                this->read_fun_1(*(Message_phoenix*)this->read_buffer_.data());
+                this->read_fun_1(*(Message_phoenix*)buffer.data());
                 // std::cout << "Received IMU data." << std::endl;
             } else {
                 // std::cout << "Unknown message type: " << std::hex << static_cast<int>(type)
                 //           << std::dec << std::endl;
             }
-        }
     });
-    Link_thread.detach();
 }
 
 Eigen::Quaterniond CBoard::imu_at(std::chrono::steady_clock::time_point timestamp) {
@@ -130,47 +130,34 @@ void CBoard::send(Command command) {
     msg_body.pitch      = static_cast<float>(command.pitch);
     msg_body.yaw_vel    = static_cast<float>(command.yaw_vel);
     msg_body.pitch_vel  = static_cast<float>(command.pitch_vel);
-    msg_body.fire_bools = command.shoot ? 49 : 48;   // '1' or '0'
+    msg_body.fire_bools = command.shoot ? 49 : 48; // '1' or '0'
     std::memcpy(msg.data, &msg_body, sizeof(GimbalControl));
     msg.tail = 'e';
 
-    auto code = this->serial_.write(std::move(msg));
-    static int fail_count = 0;
-    if (!code) {
-        int err_code = static_cast<int>(code.code());
-        tools::logger()->warn("Serial write failed: {}", err_code);
-        
-        // Error code 40 (WRITE_FAIL) usually implies a disconnected or broken device.
-        // If it happens continuously, we should exit to let watchdog restart the process.
-        fail_count++;
-        if (fail_count > 5 || err_code == 40) {
-            tools::logger()->error("Serial write failed too many times or critical error. Exiting...");
-            std::exit(1); 
-        }
-    } else {
-        fail_count = 0;
-    }
+this->serial_.send(msg.toBytes());
+    // static int fail_count = 0;
+    // if (!code) {
+    //     int err_code = static_cast<int>(code.code());
+    //     tools::logger()->warn("Serial write failed: {}", err_code);
+
+    //     // Error code 40 (WRITE_FAIL) usually implies a disconnected or broken device.
+    //     // If it happens continuously, we should exit to let watchdog restart the process.
+    //     fail_count++;
+    //     if (fail_count > 5 || err_code == 40) {
+    //         tools::logger()->error(
+    //             "Serial write failed too many times or critical error. Exiting..."
+    //         );
+    //         std::exit(1);
+    //     }
+    // } else {
+    //     fail_count = 0;
+    // }
 }
-
-// 串口通信下已弃用
-// std::string CBoard::read_yaml(const std::string& config_path) {
-//     auto yaml = tools::load(config_path);
-
-//     quaternion_canid_   = tools::read<int>(yaml, "quaternion_canid");
-//     bullet_speed_canid_ = tools::read<int>(yaml, "bullet_speed_canid");
-//     send_canid_         = tools::read<int>(yaml, "send_canid");
-
-//     if (!yaml["can_interface"]) {
-//         throw std::runtime_error("Missing 'can_interface' in YAML configuration.");
-//     }
-
-//     return yaml["can_interface"].as<std::string>();
-// }
 
 void CBoard::read_fun_1(Message_phoenix& msg) {
     auto timestamp = std::chrono::steady_clock::now();
 
-    Autoaim_s data = reinterpret_cast<Autoaim_s&>(msg.data);
+    Autoaim_s data          = reinterpret_cast<Autoaim_s&>(msg.data);
     double raw_bullet_speed = data.bullet_speed;
     if (use_default_bullet_speed_) {
         this->bullet_speed = default_bullet_speed_;
@@ -179,12 +166,14 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
     } else if (cboard_debug_log_) {
         tools::logger()->warn(
             "[CBoard] Invalid bullet speed from MCU: raw={:.3f}. Keep fallback/current v={:.3f}",
-            raw_bullet_speed, this->bullet_speed);
+            raw_bullet_speed,
+            this->bullet_speed
+        );
     }
-    double raw_yaw = data.yaw;
+    double raw_yaw   = data.yaw;
     double raw_pitch = data.pitch;
-    double yaw      = raw_yaw;
-    double pitch    = raw_pitch;
+    double yaw       = raw_yaw;
+    double pitch     = raw_pitch;
 
     // // 记录原始读取值，便于排查数据格式/协议问题
     // tools::logger()->debug("[CBoard] raw angles: yaw={}, pitch={}, degrees_flag={}", yaw, pitch,
@@ -201,8 +190,11 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
     pitch += imu_pitch_offset_rad_;
 
     // 合法性检查：排除 NaN/Inf 或极端错误值，避免产生非法四元数
-    if (!std::isfinite(yaw) || !std::isfinite(pitch) || std::abs(yaw) > 1e4 || std::abs(pitch) > 1e4) {
-        tools::logger()->error("[CBoard] Invalid IMU angles, skipping sample: yaw={}, pitch={}", yaw, pitch);
+    if (!std::isfinite(yaw) || !std::isfinite(pitch) || std::abs(yaw) > 1e4
+        || std::abs(pitch) > 1e4)
+    {
+        tools::logger()
+            ->error("[CBoard] Invalid IMU angles, skipping sample: yaw={}, pitch={}", yaw, pitch);
         return;
     }
 
@@ -217,10 +209,15 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
         if (dt > 0.5) {
             tools::logger()->info(
                 "[CBoard] raw(yaw={:.3f}, pitch={:.3f}, v={:.3f}) unit={} -> parsed(yaw={:.3f}rad, pitch={:.3f}rad, v={:.3f}, source={})",
-                raw_yaw, raw_pitch, raw_bullet_speed,
+                raw_yaw,
+                raw_pitch,
+                raw_bullet_speed,
                 phoenix_angles_in_degrees_ ? "deg" : "rad",
-                yaw, pitch, this->bullet_speed,
-                use_default_bullet_speed_ ? "yaml_default" : "mcu_or_fallback");
+                yaw,
+                pitch,
+                this->bullet_speed,
+                use_default_bullet_speed_ ? "yaml_default" : "mcu_or_fallback"
+            );
             last_debug_log_time_ = timestamp;
         }
     }
