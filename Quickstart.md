@@ -2,7 +2,7 @@
 
 ## 1. 安装依赖
 在终端中运行setup.bash脚本安装依赖：
-（注意ROS版本）
+（注意ROS和OpenVINO版本，确保与系统兼容）
 ```bash
 bash setup.bash
 ```
@@ -19,7 +19,9 @@ cmake --build build -j$(nproc)
 ```bash
 cmake --build build --target standard_mpc_se -j$(nproc)
 ```
-io部分可能需要单独colcon build编译，不然找不到对应的serial：（如果还有报错请移步询问ai）
+io部分可能需要单独colcon build编译，不然找不到对应的serial：
+
+（如果还有报错请移步询问ai，可能需要安装串口库，届时请直接(sudo apt install ros-humble-serial ros-humble-ros2-serial-driver)此为示例）
 ```bash
 cd io
 colcon build --symlink-install
@@ -167,7 +169,7 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 
 本项目使用 `watchdog.sh` 作为守护进程，由 systemd 服务在开机时拉起。
 
-### 步骤 1：确保脚本有执行权限
+### 步骤 1：确保脚本有执行权限（注意路径要修改为实际路径）
 
 ```bash
 chmod +x /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
@@ -190,48 +192,82 @@ fi
 ```
 > 如使用其他 ROS 版本，修改路径即可。
 
-### 步骤 3：重载并启动 systemd 服务
+### 步骤 3：创建 systemd 服务文件
 
-修改过 `watchdog.sh` 或服务文件后，需要重载：
+在系统中创建一个 systemd unit，用于在开机时启动 `watchdog.sh` 并由 systemd 管理其重启与日志。
+
+1. 使用编辑器创建服务文件：
 
 ```bash
+sudo nano /etc/systemd/system/Sc_vision.service
+```
+
+2. 将下面内容粘贴进去并保存（根据你的路径修改 `User`、`WorkingDirectory`、`ExecStart`）：
+
+```ini
+[Unit]
+Description=Sc_vision Auto Aim Watchdog
+After=network.target
+
+[Service]
+Type=simple
+User=setsuna
+WorkingDirectory=/home/setsuna/RM/AutoAim/Sc_vision
+ExecStart=/bin/bash /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
+Restart=always
+RestartSec=5
+Environment=HOME=/home/setsuna
+# 可选：从 /etc/default/Sc_vision.env 加载环境变量（如 LD_LIBRARY_PATH）
+EnvironmentFile=-/etc/default/Sc_vision.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+说明：
+- `Type=simple` 假定 `watchdog.sh` 在前台运行并不 fork；如果脚本会后台 fork，请改为 `Type=forking` 并使用 `PIDFile=`。
+- `EnvironmentFile` 前的 `-` 表示文件不存在时忽略（方便可选配置）。
+
+3. 重载 systemd 配置并启动服务：
+
+```bash
+# 重载 systemd 配置
 sudo systemctl daemon-reload
-sudo systemctl restart sp_vision.service
+# 启动并设置开机自启
+sudo systemctl enable --now Sc_vision.service
 ```
 
-验证运行状态：
+4. 查看服务状态与日志：
+
 ```bash
-sudo systemctl status sp_vision.service
+# 查看服务状态
+sudo systemctl status Sc_vision.service
+# 实时查看日志输出
+sudo journalctl -u Sc_vision.service -f
 ```
 
-### 步骤 4：查看实时日志
+5. 停止或重启服务：
 
 ```bash
-journalctl -u sp_vision.service -f
+# 停止服务
+sudo systemctl stop Sc_vision.service
+# 重启服务
+sudo systemctl restart Sc_vision.service
 ```
 
-### 步骤 5：停止自启程序
+如果你需要直接杀掉进程作为最后手段：
 
 ```bash
-sudo systemctl stop sp_vision.service
-# 或直接杀进程
 pkill -f watchdog.sh
 pkill -f standard_mpc_se
 ```
 
 ---
 
-## 修改代码后重新编译
-
-```bash
-cmake --build build --target standard_mpc_se -j$(nproc)
-```
-
-然后重启服务使其生效：
-```bash
-sudo systemctl restart sp_vision.service
-```
 
 ## Impovements in progress
-- 动态调整ROI大小以适应目标距离变化（较重要）
-- 引入自适应增益以提升不同速度下的跟随性能
+- 高优先级：
+  1. 添加自适应击打角度调整：根据目标运动角速度动态调整击打角度，提高命中率。
+  2. 测试推理池化和推理慢帧丢弃策略的性能
+- 中优先级：
+  1. 自适应kalman滤波器：根据目标运动状态动态调整过程噪声协方差，提高追踪稳定性。
