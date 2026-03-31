@@ -32,7 +32,46 @@ else
     rm -r mindvision-sdk
 fi
 echo -e "\n\n>>> OpenVINO" && sleep 1
-echo "(skipped OpenVINO installation)"
+echo "Installing OpenVINO Runtime (offline package)..."
+# create target folder
+if [ ! -d /opt/intel ]; then
+        sudo mkdir -p /opt/intel
+fi
+
+cd /tmp || exit 1
+# Download OpenVINO runtime archive (Ubuntu 22.04 x86_64). If you need a different
+# distro/arch, replace the URL accordingly.
+OPENVINO_TGZ=openvino_2024.6.0.tgz
+if [ ! -f "$OPENVINO_TGZ" ]; then
+    echo "Downloading OpenVINO runtime..."
+    curl -L \
+        https://storage.openvinotoolkit.org/repositories/openvino/packages/2024.6/linux/l_openvino_toolkit_ubuntu22_2024.6.0.17404.4c0f47d2335_x86_64.tgz \
+        --output "$OPENVINO_TGZ"
+fi
+
+if [ ! -f "$OPENVINO_TGZ" ]; then
+    echo "Failed to download OpenVINO archive ($OPENVINO_TGZ)"
+else
+    echo "Extracting OpenVINO..."
+    tar -xf "$OPENVINO_TGZ"
+    # determine extracted dir
+    DIRNAME=$(tar -tf "$OPENVINO_TGZ" | head -1 | cut -f1 -d"/")
+    if [ -d "$DIRNAME" ]; then
+        echo "Moving OpenVINO to /opt/intel/openvino_2024.6.0"
+        sudo mv "$DIRNAME" /opt/intel/openvino_2024.6.0
+        # Install OS-level dependencies provided by OpenVINO
+        if [ -f /opt/intel/openvino_2024.6.0/install_dependencies/install_openvino_dependencies.sh ]; then
+            echo "Installing OpenVINO system dependencies..."
+            sudo -E /opt/intel/openvino_2024.6.0/install_dependencies/install_openvino_dependencies.sh
+        else
+            echo "OpenVINO dependency installer not found; please run it manually in /opt/intel/openvino_2024.6.0"
+        fi
+    else
+        echo "Extraction failed or unexpected package layout; please inspect /tmp"
+    fi
+fi
+
+cd - >/dev/null || true
 echo -e "\n\n>>> ROS 2" && sleep 1
 if ! command -v ros2 &> /dev/null
 then
