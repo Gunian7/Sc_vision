@@ -23,7 +23,7 @@ Publish2Nav::~Publish2Nav()
   RCLCPP_INFO(this->get_logger(), "auto_aim_target_pos_publisher node shutting down.");
 }
 
-void Publish2Nav::send_data(const Eigen::Vector4d & target_pos)
+void Publish2Nav::send_data(const Eigen::VectorXd & target_pos)
 {
   // 创建消息
   auto message = std::make_shared<communicate_2025::msg::SerialInfo>();
@@ -32,11 +32,14 @@ void Publish2Nav::send_data(const Eigen::Vector4d & target_pos)
   // 将 Eigen::Vector4d 数据转换为消息字段
   message->yaw = static_cast<float>(target_pos[0]);
   message->pitch = static_cast<float>(target_pos[1]);
+  message->vel_yaw = static_cast<float>(target_pos[2]);
+  message->vel_pitch = static_cast<float>(target_pos[3]);
   
   // is_find 是 std_msgs/Char 类型，需要将double转换为char
   // 通常使用 0/1 来表示 false/true
   // message->is_find.data = static_cast<uint8_t>(0);
-  message->is_find.data = static_cast<uint8_t>(target_pos[3] != 0.0 ? 1 : 0);
+  message->is_shoot.data = static_cast<uint8_t>(target_pos[4] != 0.0 ? 1 : 0); // 根据 vel_yaw 是否为0来判断是否射击
+  message->is_find.data = static_cast<uint8_t>(target_pos[5] != 0.0 ? 1 : 0);
  
   // 发布消息
   publisher_->publish(*message);
