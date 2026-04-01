@@ -58,7 +58,6 @@ void MindVision::read(cv::Mat & img, std::chrono::steady_clock::time_point & tim
   img = data.img;
   timestamp = data.timestamp;
 }
-
 void MindVision::open()
 {
   int camera_num = 1;
@@ -81,7 +80,7 @@ void MindVision::open()
   CameraSetGamma(handle_, gamma_ * 1e2);                   // 设置伽马
   CameraSetIspOutFormat(handle_, CAMERA_MEDIA_TYPE_BGR8);  // 设置输出格式为BGR
   CameraSetTriggerMode(handle_, 0);                        // 设置为连续采集模式
-  CameraSetFrameSpeed(handle_, 1);                         // 设置为低帧率模式
+  CameraSetFrameSpeed(handle_, 2);                         // 设置为低帧率模式 应该改为2
 
   CameraPlay(handle_);
 
@@ -96,7 +95,8 @@ void MindVision::open()
 
       auto img = cv::Mat(height_, width_, CV_8UC3);
 
-      auto status = CameraGetImageBuffer(handle_, &head, &raw, 100);
+      // 增加超时以容忍短暂卡顿
+      auto status = CameraGetImageBuffer(handle_, &head, &raw, 500);
       auto timestamp = std::chrono::steady_clock::now();
 
       if (status != CAMERA_STATUS_SUCCESS) {
@@ -117,10 +117,16 @@ void MindVision::open()
 
 void MindVision::try_open()
 {
-  try {
-    open();
-  } catch (const std::exception & e) {
-    tools::logger()->warn("{}", e.what());
+  // 尝试多次打开，短暂退避
+  const int max_attempts = 3;
+  for (int i = 0; i < max_attempts; ++i) {
+    try {
+      open();
+      return;
+    } catch (const std::exception & e) {
+      tools::logger()->warn("open attempt {}/{} failed: {}", i + 1, max_attempts, e.what());
+      std::this_thread::sleep_for(200ms);
+    }
   }
 }
 
@@ -128,6 +134,9 @@ void MindVision::close()
 {
   if (handle_ == -1) return;
   CameraUnInit(handle_);
+  // 标记为已关闭，避免重复使用已失效的 handle
+  handle_ = -1;
+  ok_ = false;
 }
 
 void MindVision::set_vid_pid(const std::string & vid_pid)
@@ -166,6 +175,8 @@ void MindVision::reset_usb() const
     tools::logger()->info("Reset usb successfully :)");
 
   libusb_close(handle);
+  // 等待内核/USB 子系统稳定
+  std::this_thread::sleep_for(200ms);
 }
 
 }  // namespace io

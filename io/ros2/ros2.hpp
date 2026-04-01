@@ -15,9 +15,7 @@ public:
 
   void publish(const Eigen::Vector4d & target_pos);
 
-  std::vector<int8_t> subscribe_enemy_status();
-
-  std::vector<int8_t> subscribe_autoaim_target();
+  std::optional<AutoaimData> get_autoaim_data();
 
   template <typename T>
   std::shared_ptr<rclcpp::Publisher<T>> create_publisher(

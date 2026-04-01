@@ -9,7 +9,7 @@ yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0708.onnx
 device: CPU
-min_confidence: 0.3
+min_confidence: 0.6
 use_traditional: false
 #   x: 290
 #   y: 450
@@ -170,3 +170,5 @@ fire_gap_time: 0.700   # s
 predict_time: 0.120     # s
 
 bullet_speed: 20.0  # m/s
+#####-----Dynamic ROI-----#####
+use_dynamic_roi: true

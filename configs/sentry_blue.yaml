@@ -1,31 +1,31 @@
-# enemy_color: "red"
-enemy_color: "blue"
+enemy_color: "red"  
+ # 使用yolo11的版本，推理速度过慢，50FPS
+# enemy_color: "blue"
 
 #####-----神经网络参数-----#####
-yolo_name: yolo11
+yolo_name: yolov5
 classify_model: assets/tiny_resnet.onnx
 yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
-min_confidence: 0.70
-#   x: 290
-#   y: 450
-#   width: 750
-#   height: 560
-
-# use_roi: true
-
+min_confidence: 0.7
+use_traditional: true
 
 #####-----ROI-----#####
+
 roi: 
-  x: 240
-  y: 420
+  x: 260
+  y: 350
   width: 800
-  height: 560
+  height: 500
 
 use_roi: true
+
+dynamic_roi: true
+dynamic_roi_shrink_frames: 2
+dynamic_roi_lost_frames: 10
 
 #####-----传统方法参数-----#####
 threshold: 150
@@ -39,41 +39,51 @@ max_side_ratio: 1.5
 max_rectangular_error: 25 # degree
 
 #####-----tracker参数-----#####
-min_detect_count: 6
-max_temp_lost_count: 30
+min_detect_count: 5
+max_temp_lost_count: 15
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
 outpost_leaving_angle: 30 # degree 前哨站离开视野角度
 outpost_max_temp_lost_count: 75
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
-jump_z_threshold: 0.02 # m
-jump_confirm_count: 1
+jump_z_threshold: 0.03 # m
+jump_confirm_count: 3
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
 jump_fire_cooldown: 0.0 # s 固定延时(不使用动态参数时生效)
-jump_fire_cooldown_min: 0.05 # s 低速跳变发弹延时
-jump_fire_cooldown_max: 0.20 # s 高速跳变发弹延时
-outpost_jump_fire_cooldown: 0.08 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
+jump_fire_cooldown_min: 0.0 # s 低速跳变发弹延时
+jump_fire_cooldown_max: 0.0 # s 高速跳变发弹延时
+outpost_jump_fire_cooldown: 0.02 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
 jump_fire_cooldown_speed_start: 3.0 # rad/s 低速起点
 jump_fire_cooldown_speed_end: 10.0 # rad/s 高速终点
 jump_pitch_up: 0.3 # degree  装甲板跳变修正量
 jump_pitch_down: 1.5 # degree
-jump_pitch_up_duration: 0.15 # s
-jump_pitch_down_duration: 0.25 # s
-jump_min_interval: 0.15 # s 跳变最小间隔
+jump_pitch_up_duration: 0.0 # s
+jump_pitch_down_duration: 0.0 # s
+jump_min_interval: 0.01 # s 跳变最小间隔
+# 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
+target_process_noise_linear_normal: 100.0  #100
+target_process_noise_angular_normal: 200.0  #400
+target_process_noise_linear_outpost: 10.0
+target_process_noise_angular_outpost: 0.1
+# 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
+target_measurement_noise_yaw: 0.02    #0.002
+target_measurement_noise_pitch: 0.002
+force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），会把
+forced_target_angular_velocity: 2.51 # rad/s
 #####-----aimer参数-----#####
-yaw_offset: 1.5   # degree 1.5
-pitch_offset: 10.5 # degree 2
-comming_angle: 35 # degree 55
-leaving_angle: 20 # degree 20
-comming_angle_high: 50 # degree 高速(角速度大)使用
-leaving_angle_high: 10 # degree 高速(角速度大)使用
-comming_end_angle: 55 # degree 极高速下的最小角度
-leaving_end_angle: 8 # degree 极高速下的最小角度
-speed_angle: 7 # rad/s 角速度阈值(用于comming/leaving切换)
-speed_angle_max: 12 # rad/s 达到该角速度时角度缩减到end_angle
+yaw_offset: 0.075   # 增大向左，反之向右
+pitch_offset: -1.3 # 增大向上 反之向下
+comming_angle: 55 # degree 55
+leaving_angle: 10 # degree 20
+comming_angle_high: 40 # degree 高速(角速度大)使用
+leaving_angle_high: 8 # degree 高速(角速度大)使用
+comming_end_angle: 20 # degree 极高速下的最小角度
+leaving_end_angle: 5 # degree 极高速下的最小角度
+speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
+speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
 decision_speed: 7 # rad/s
-high_speed_delay_time: -0.13 # s
-low_speed_delay_time: -0.03 # s planner use this value
+high_speed_delay_time: -0.1478 # s
+low_speed_delay_time: -0.08 # s planner use this value
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
@@ -82,10 +92,17 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "mindvision"
-exposure_ms: 3.3
-gamma: 0.9
-gain: 0.0   
-vid_pid: "f622:0001"
+exposure_ms: 8.0
+gamma: 1.0
+gain: 400.0   
+vid_pid: "f622:d132"
+
+#  效果较好的一版 ，参数勿删
+# camera_name: "mindvision"
+# exposure_ms: 1.3
+# gamma: 0.7
+# gain: 20.0   
+# vid_pid: "f622:0001"
 
 # camera_name: "mindvision"
 # exposure_ms: 1.2
@@ -99,8 +116,10 @@ vid_pid: "f622:0001"
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
 # 重投影误差: 0.1820px
-camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
+# camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
+camera_matrix: [1576.1848133781584, 0.0, 664.1339977443115, 0.0, 1573.6922185286548, 512.2431312434778, 0.0, 0.0, 1.0]
+# distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
+distort_coeffs: [-0.075708381602418, 0.19361207875279068, 0.000523637296268325, 0.0009647248530877785, 0.0]
 
 
 # 相机同理想情况的偏角: yaw1.44 pitch-7.28 roll0.96 degree
@@ -122,6 +141,21 @@ quaternion_canid: 0x100
 bullet_speed_canid: 0x101
 send_canid: 0xff
 can_interface: "can0"
+phoenix_angle_unit: rad   # 下位机若发送角度(度)则设为deg，发送弧度则改为rad
+imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
+imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
+use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
+cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
+use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
+
+#####-----目标稳定性参数-----#####
+target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
+target_stabilize_alpha: 0.3            # 平滑系数(0.0~1.0)，越小越平滑(推荐0.1~0.5)，0表示完全保持上一值，1表示完全新值
+enable_target_stabilize: false          # 是否启用平滑过渡机制
+
+#####-----plotter参数-----#####
+plotter_host: "127.0.0.1"
+plotter_port: 9870
 
 #####-----gimbal参数-----#####
 com_port: "/dev/gimbal"
@@ -134,24 +168,12 @@ pitch_kd: 0
 fire_thresh: 0.0035
 # R越大越平滑/Q越大越激进
 max_yaw_acc: 100
-Q_yaw: [10e6, 0]
+Q_yaw: [9e6, 0]
 R_yaw: [1]
 
 max_pitch_acc: 50
 Q_pitch: [9e6, 0]
-R_pitch: [5]
-
-#####-----cboard参数-----#####
-phoenix_angle_unit: rad   # 下位机若发送角度(度)则设为deg，发送弧度则改为rad
-imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
-imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
-use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
-cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-
-#####-----目标稳定性参数-----#####
-target_jump_angle_threshold_deg: 2.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
-target_stabilize_alpha: 0.3            # 平滑系数(0.0~1.0)，越小越平滑(推荐0.1~0.5)，0表示完全保持上一值，1表示完全新值
-enable_target_stabilize: false          # 是否启用平滑过渡机制
+R_pitch: [1]
 
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"
@@ -160,4 +182,4 @@ model: "assets/yolo11_buff_int8.xml"
 fire_gap_time: 0.700   # s
 predict_time: 0.120     # s
 
-bullet_speed: 20.0  # m/s
+bullet_speed: 21.6  # m/s

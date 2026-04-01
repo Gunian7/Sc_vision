@@ -52,6 +52,13 @@ int main(int argc, char * argv[])
     else
       armors = yolo.detect(img);
 
+    cv::Rect roi_rect;
+    bool roi_active = false;
+    if (yolo.get_debug_roi(roi_rect, roi_active)) {
+      tools::logger()->info("[ROI] active={}, x={}, y={}, w={}, h={}",
+        roi_active, roi_rect.x, roi_rect.y, roi_rect.width, roi_rect.height);
+    }
+
     total_frames++;
     if (!armors.empty()) detect_frames++;
 

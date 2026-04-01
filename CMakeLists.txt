@@ -13,6 +13,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS on)
 
 message(STATUS "--------------------CMAKE_BUILD_TYPE: ${CMAKE_BUILD_TYPE}--------------------")
 
+# Option: allow building standard_mpc_se even when ROS is not found
+option(BUILD_STANDARD_MPC_SE "Build standard_mpc_se even if ROS environment is not found" OFF)
+
 if(EXISTS "/usr/lib/x86_64-linux-gnu/cmake/fmt/fmt-config.cmake")
   set(fmt_DIR "/usr/lib/x86_64-linux-gnu/cmake/fmt" CACHE PATH "System fmt config" FORCE)
 endif()
@@ -54,7 +57,7 @@ add_executable(auto_buff_debug src/auto_buff_debug.cpp)
 add_executable(auto_buff_debug_mpc src/auto_buff_debug_mpc.cpp)
 add_executable(uav src/uav.cpp)
 add_executable(uav_debug src/uav_debug.cpp)
-add_executable(standard_mpc_se src/standard_mpc_se.cpp)
+
 
 target_link_libraries(standard ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(mt_standard ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
@@ -65,7 +68,7 @@ target_link_libraries(auto_buff_debug ${OpenCV_LIBS} yaml-cpp auto_buff tools io
 target_link_libraries(auto_buff_debug_mpc ${OpenCV_LIBS} yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
 target_link_libraries(uav ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(uav_debug ${OpenCV_LIBS} yaml-cpp auto_aim tools io)
-target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
+
 
 ##################calibration################
 add_executable(capture calibration/capture.cpp)
@@ -91,7 +94,6 @@ add_executable(camera_thread_test tests/camera_thread_test.cpp)
 add_executable(cboard_test tests/cboard_test.cpp)
 add_executable(fire_test tests/fire_test.cpp)
 add_executable(detector_video_test tests/detector_video_test.cpp)
-add_executable(gimbal_response_test tests/gimbal_response_test.cpp)
 add_executable(multi_usbcamera_test tests/multi_usbcamera_test.cpp)
 add_executable(usbcamera_detect_test tests/usbcamera_detect_test.cpp)
 add_executable(usbcamera_test tests/usbcamera_test.cpp)
@@ -108,7 +110,6 @@ target_link_libraries(camera_thread_test ${OpenCV_LIBS} auto_aim tools io)
 target_link_libraries(cboard_test ${OpenCV_LIBS} tools io)
 target_link_libraries(fire_test ${OpenCV_LIBS} tools io)
 target_link_libraries(detector_video_test ${OpenCV_LIBS} yaml-cpp tools auto_aim)
-target_link_libraries(gimbal_response_test ${OpenCV_LIBS} yaml-cpp tools io)
 target_link_libraries(multi_usbcamera_test ${OpenCV_LIBS} tools io)
 target_link_libraries(usbcamera_detect_test ${OpenCV_LIBS} yaml-cpp tools io auto_aim)
 target_link_libraries(usbcamera_test ${OpenCV_LIBS} yaml-cpp tools io)
@@ -133,25 +134,51 @@ find_package(ament_cmake QUIET)
 find_package(rclcpp QUIET)
 find_package(std_msgs QUIET)
 find_package(rosidl_typesupport_cpp QUIET)
-find_package(sp_msgs QUIET)
-# 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
-if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND AND sp_msgs_FOUND)
-    # 编译 sentry 和 publish_test
-    add_executable(sentry src/sentry.cpp)
-    add_executable(sentry_bp src/sentry_bp.cpp)
-    add_executable(sentry_debug src/sentry_debug.cpp)
-    add_executable(sentry_multithread src/sentry_multithread.cpp)
-    add_executable(publish_test tests/publish_test.cpp)
-    add_executable(subscribe_test tests/subscribe_test.cpp)
-    add_executable(topic_loop_test tests/topic_loop_test.cpp)
 
-    target_link_libraries(sentry ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io)
-    target_link_libraries(sentry_bp ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io)
-    target_link_libraries(sentry_debug ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io)
-    target_link_libraries(sentry_multithread ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io)
-    target_link_libraries(publish_test ${OpenCV_LIBS} tools io auto_aim)
-    target_link_libraries(subscribe_test ${OpenCV_LIBS} tools io)
-    target_link_libraries(topic_loop_test ${OpenCV_LIBS} tools io)
+# 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
+if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND)
+    include_directories(${communicate_2025})
+    # 编译 sentry 和 publish_test
+    # add_executable(sentry src/sentry.cpp)
+    # add_executable(sentry_bp src/sentry_bp.cpp)
+    # add_executable(sentry_debug src/sentry_debug.cpp)
+    # add_executable(sentry_multithread src/sentry_multithread.cpp)
+    # add_executable(publish_test tests/publish_test.cpp)
+    # add_executable(subscribe_test tests/subscribe_test.cpp)
+    # add_executable(topic_loop_test tests/topic_loop_test.cpp)
+    add_executable(standard_mpc_se src/standard_mpc_se.cpp)
+    add_executable(ros_gimbal_response_test tests/ros_gimbal_response_test.cpp)
+
+    # target_link_libraries(sentry ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
+    # target_link_libraries(sentry_bp ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
+    # target_link_libraries(sentry_debug ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
+    # target_link_libraries(sentry_multithread ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
+    # target_link_libraries(publish_test ${OpenCV_LIBS} tools io auto_aim ${communicate_2025})
+    # target_link_libraries(subscribe_test ${OpenCV_LIBS} tools io ${communicate_2025})
+    # target_link_libraries(topic_loop_test ${OpenCV_LIBS} tools io ${communicate_2025})
+    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_2025})
+    target_link_libraries(ros_gimbal_response_test ${OpenCV_LIBS} ${communicate_2025} io tools auto_aim fmt::fmt yaml-cpp)
 else()
     message(STATUS "ROS2 environment not found, skipping ROS2-related code.")
+endif()
+
+# If user explicitly requests building standard_mpc_se even without ROS, add a
+# fallback target that links only available libraries. When ROS libs are found
+# (communicate_2025 defined), link them as well.
+if(NOT (ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND) AND BUILD_STANDARD_MPC_SE)
+  message(STATUS "BUILD_STANDARD_MPC_SE is ON — adding standard_mpc_se target without full ROS requirements.")
+  # If local communicate_2025 install exists (from io/ros2 colcon build), add its
+  # include directory so generated headers like communicate_2025/msg/ekf.hpp are
+  # visible to the compiler.
+  if(EXISTS "${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
+    message(STATUS "Adding include directory for local communicate_2025: ${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
+    include_directories("${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
+  endif()
+
+  add_executable(standard_mpc_se src/standard_mpc_se.cpp)
+  if(DEFINED communicate_2025)
+    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_2025})
+  else()
+    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
+  endif()
 endif()
