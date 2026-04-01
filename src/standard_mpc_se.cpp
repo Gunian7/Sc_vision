@@ -249,10 +249,12 @@ int main(int argc, char* argv[]) {
         tools::draw_text(
             img,
             fmt::format(
-                "command is {},{:.2f},{:.2f},shoot:{}",
+                "command is {},{:.2f},{:.2f},{:.2f},{:.2f},shoot:{}",
                 command.control,
                 command.yaw * 57.3,
                 command.pitch * 57.3,
+                command.yaw_vel * 57.3,
+                command.pitch_vel * 57.3,
                 command.shoot
             ),
             { 10, 60 },
@@ -416,11 +418,13 @@ int main(int argc, char* argv[]) {
         // }
         // send command via ROS2 publisher node
         if (pub_node) {
-            Eigen::Vector4d out;
+            Eigen::VectorXd out(6);
             out[0] = command.yaw;
             out[1] = command.pitch;
-            out[2] = 0.0; // reserved
-            out[3] = command.control ? 1.0 : 0.0; // is_find flag
+            out[2] = command.yaw_vel; // vel_yaw
+            out[3] = command.pitch_vel; // vel_pitch
+            out[4] = command.shoot ? 1.0 : 0.0; // is_shoot flag
+            out[5] = command.control ? 1.0 : 0.0; // is_find flag
             pub_node->send_data(out);
         }
         frame_count++;

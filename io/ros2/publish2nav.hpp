@@ -24,7 +24,7 @@ public:
 
   void start();
 
-  void send_data(const Eigen::Vector4d & data);
+  void send_data(const Eigen::VectorXd & data);
 
   void send_ekf_w(const Eigen::VectorXd & ekf_w,const int last_id);
 
