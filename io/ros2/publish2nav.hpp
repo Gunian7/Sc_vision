@@ -10,8 +10,8 @@
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
-#include "communicate_2025/msg/ekf.hpp"
-#include "communicate_2025/msg/serial_info.hpp"
+#include "communicate_26/msg/ekf.hpp"
+#include "communicate_26/msg/serial_info.hpp"
 
 namespace io
 {
@@ -30,8 +30,8 @@ public:
 
 private:
   // ROS2 发布者
-  rclcpp::Publisher<communicate_2025::msg::SerialInfo>::SharedPtr publisher_;
-  rclcpp::Publisher<communicate_2025::msg::EKF>::SharedPtr publisher_ekf_w_;
+  rclcpp::Publisher<communicate_26::msg::SerialInfo>::SharedPtr publisher_;
+  rclcpp::Publisher<communicate_26::msg::EKF>::SharedPtr publisher_ekf_w_;
 };
 
 }  // namespace io

@@ -11,7 +11,7 @@ Subscribe2Nav::Subscribe2Nav()
   autoaim_queue_(1)
 {
   // 创建订阅器，订阅 /communicate/autoaim 话题
-  autoaim_subscription_ = this->create_subscription<communicate_2025::msg::Autoaim>(
+  autoaim_subscription_ = this->create_subscription<communicate_26::msg::Autoaim>(
     "/communicate/autoaim", 10,
     std::bind(&Subscribe2Nav::autoaim_callback, this, std::placeholders::_1));
 
@@ -23,7 +23,7 @@ Subscribe2Nav::~Subscribe2Nav()
   RCLCPP_INFO(this->get_logger(), "nav_subscriber node shutting down.");
 }
 
-void Subscribe2Nav::autoaim_callback(const communicate_2025::msg::Autoaim::SharedPtr msg)
+void Subscribe2Nav::autoaim_callback(const communicate_26::msg::Autoaim::SharedPtr msg)
 {
   AutoaimData data;
   data.pitch = msg->pitch;

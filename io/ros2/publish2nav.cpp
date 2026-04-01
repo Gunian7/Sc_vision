@@ -12,8 +12,8 @@ namespace io
 
 Publish2Nav::Publish2Nav() : Node("auto_aim_target_pos_publisher")
 {
-  publisher_ = this->create_publisher<communicate_2025::msg::SerialInfo>("/shoot_info", 10);
-  publisher_ekf_w_ = this->create_publisher<communicate_2025::msg::EKF>("/ekf_w", 10);
+  publisher_ = this->create_publisher<communicate_26::msg::SerialInfo>("/shoot_info", 10);
+  publisher_ekf_w_ = this->create_publisher<communicate_26::msg::EKF>("/ekf_w", 10);
 
   RCLCPP_INFO(this->get_logger(), "auto_aim_target_pos_publisher node initialized.");
 }
@@ -26,7 +26,7 @@ Publish2Nav::~Publish2Nav()
 void Publish2Nav::send_data(const Eigen::VectorXd & target_pos)
 {
   // 创建消息
-  auto message = std::make_shared<communicate_2025::msg::SerialInfo>();
+  auto message = std::make_shared<communicate_26::msg::SerialInfo>();
 
   // 将 Eigen::Vector3d 数据转换为字符串并存储在消息中
   // 将 Eigen::Vector4d 数据转换为消息字段
@@ -55,7 +55,7 @@ void Publish2Nav::send_data(const Eigen::VectorXd & target_pos)
 void Publish2Nav::send_ekf_w(const Eigen::VectorXd & ekf_w,const int last_id)
 {
   // 创建消息
-  auto message = std::make_shared<communicate_2025::msg::EKF>();
+  auto message = std::make_shared<communicate_26::msg::EKF>();
 
   // 将 double 数据存储在消息中
   message->x = static_cast<float>(ekf_w[0]);

@@ -6,8 +6,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <thread>
 
-#include "communicate_2025/msg/autoaim.hpp"
-#include "communicate_2025/msg/serial_info.hpp"
+#include "communicate_26/msg/autoaim.hpp"
+#include "communicate_26/msg/serial_info.hpp"
 #include "tools/exiter.hpp"
 #include "tools/plotter.hpp"
 
@@ -58,16 +58,16 @@ int main(int argc, char * argv[])
 
   // 单节点自发布：直接发布 /shoot_info
   auto shoot_pub =
-    node->create_publisher<communicate_2025::msg::SerialInfo>("/shoot_info", 10);
+    node->create_publisher<communicate_26::msg::SerialInfo>("/shoot_info", 10);
 
   // 同时订阅 /communicate/autoaim
   std::mutex autoaim_mtx;
-  communicate_2025::msg::Autoaim::SharedPtr last_autoaim = nullptr;
-  auto autoaim_sub = node->create_subscription<communicate_2025::msg::Autoaim>(
+  communicate_26::msg::Autoaim::SharedPtr last_autoaim = nullptr;
+  auto autoaim_sub = node->create_subscription<communicate_26::msg::Autoaim>(
     "/communicate/autoaim", 10,
-    [&](communicate_2025::msg::Autoaim::UniquePtr msg) {
+    [&](communicate_26::msg::Autoaim::UniquePtr msg) {
       std::lock_guard<std::mutex> lk(autoaim_mtx);
-      last_autoaim = std::make_shared<communicate_2025::msg::Autoaim>(*msg);
+      last_autoaim = std::make_shared<communicate_26::msg::Autoaim>(*msg);
     });
   (void)autoaim_sub;
 
@@ -145,7 +145,7 @@ int main(int argc, char * argv[])
       }
     }
 
-    communicate_2025::msg::SerialInfo msg;
+    communicate_26::msg::SerialInfo msg;
     msg.yaw = static_cast<float>(cmd_yaw_deg / 57.3);
     msg.pitch = static_cast<float>(cmd_pitch_deg / 57.3);
     msg.is_find.data = 1;

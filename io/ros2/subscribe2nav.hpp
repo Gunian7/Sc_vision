@@ -7,7 +7,7 @@
 #include <optional>
 
 #include "tools/thread_safe_queue.hpp"
-#include "communicate_2025/msg/autoaim.hpp"
+#include "communicate_26/msg/autoaim.hpp"
 
 namespace io
 {
@@ -33,10 +33,10 @@ public:
   std::optional<AutoaimData> get_autoaim_data();
 
 private:
-  void autoaim_callback(const communicate_2025::msg::Autoaim::SharedPtr msg);
+  void autoaim_callback(const communicate_26::msg::Autoaim::SharedPtr msg);
 
   tools::ThreadSafeQueue<AutoaimData> autoaim_queue_;
-  rclcpp::Subscription<communicate_2025::msg::Autoaim>::SharedPtr autoaim_subscription_;
+  rclcpp::Subscription<communicate_26::msg::Autoaim>::SharedPtr autoaim_subscription_;
 };
 
 }  // namespace io

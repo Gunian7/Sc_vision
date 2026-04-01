@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>communicate_2025</name>
+  <name>communicate_26</name>
   <version>1.0.0</version>
   <description>TODO: Package description</description>
   <author email="3480678832@qq.com">lhd</author>

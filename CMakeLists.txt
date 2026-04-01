@@ -137,7 +137,7 @@ find_package(rosidl_typesupport_cpp QUIET)
 
 # 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
 if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND)
-    include_directories(${communicate_2025})
+    include_directories(${communicate_26})
     # 编译 sentry 和 publish_test
     # add_executable(sentry src/sentry.cpp)
     # add_executable(sentry_bp src/sentry_bp.cpp)
@@ -149,35 +149,35 @@ if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_
     add_executable(standard_mpc_se src/standard_mpc_se.cpp)
     add_executable(ros_gimbal_response_test tests/ros_gimbal_response_test.cpp)
 
-    # target_link_libraries(sentry ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
-    # target_link_libraries(sentry_bp ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
-    # target_link_libraries(sentry_debug ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
-    # target_link_libraries(sentry_multithread ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_2025})
-    # target_link_libraries(publish_test ${OpenCV_LIBS} tools io auto_aim ${communicate_2025})
-    # target_link_libraries(subscribe_test ${OpenCV_LIBS} tools io ${communicate_2025})
-    # target_link_libraries(topic_loop_test ${OpenCV_LIBS} tools io ${communicate_2025})
-    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_2025})
-    target_link_libraries(ros_gimbal_response_test ${OpenCV_LIBS} ${communicate_2025} io tools auto_aim fmt::fmt yaml-cpp)
+    # target_link_libraries(sentry ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_26})
+    # target_link_libraries(sentry_bp ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_26})
+    # target_link_libraries(sentry_debug ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_26})
+    # target_link_libraries(sentry_multithread ${OpenCV_LIBS} yaml-cpp auto_aim omniperception tools io ${communicate_26})
+    # target_link_libraries(publish_test ${OpenCV_LIBS} tools io auto_aim ${communicate_26})
+    # target_link_libraries(subscribe_test ${OpenCV_LIBS} tools io ${communicate_26})
+    # target_link_libraries(topic_loop_test ${OpenCV_LIBS} tools io ${communicate_26})
+    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_26})
+    target_link_libraries(ros_gimbal_response_test ${OpenCV_LIBS} ${communicate_26} io tools auto_aim fmt::fmt yaml-cpp)
 else()
     message(STATUS "ROS2 environment not found, skipping ROS2-related code.")
 endif()
 
 # If user explicitly requests building standard_mpc_se even without ROS, add a
 # fallback target that links only available libraries. When ROS libs are found
-# (communicate_2025 defined), link them as well.
+# (communicate_26 defined), link them as well.
 if(NOT (ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND) AND BUILD_STANDARD_MPC_SE)
   message(STATUS "BUILD_STANDARD_MPC_SE is ON — adding standard_mpc_se target without full ROS requirements.")
-  # If local communicate_2025 install exists (from io/ros2 colcon build), add its
-  # include directory so generated headers like communicate_2025/msg/ekf.hpp are
+  # If local communicate_26 install exists (from io/ros2 colcon build), add its
+  # include directory so generated headers like communicate_26/msg/ekf.hpp are
   # visible to the compiler.
-  if(EXISTS "${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
-    message(STATUS "Adding include directory for local communicate_2025: ${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
-    include_directories("${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_2025/include/communicate_2025")
+  if(EXISTS "${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_26/include/communicate_26")
+    message(STATUS "Adding include directory for local communicate_26: ${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_26/include/communicate_26")
+    include_directories("${CMAKE_SOURCE_DIR}/io/ros2/install/communicate_26/include/communicate_26")
   endif()
 
   add_executable(standard_mpc_se src/standard_mpc_se.cpp)
-  if(DEFINED communicate_2025)
-    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_2025})
+  if(DEFINED communicate_26)
+    target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io ${communicate_26})
   else()
     target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
   endif()
