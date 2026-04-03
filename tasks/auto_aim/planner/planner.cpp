@@ -19,6 +19,10 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  use_center_aim_when_high_speed_ = true;
+  if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
+    use_center_aim_when_high_speed_ = yaml["use_center_aim_when_high_speed"].as<bool>();
+  }
 
   setup_yaw_solver(config_path);
   setup_pitch_solver(config_path);
@@ -155,25 +159,27 @@ void Planner::setup_pitch_solver(const std::string & config_path)
 
 Eigen::Matrix<double, 2, 1> Planner::aim(const Target & target, double bullet_speed)
 {
-  Eigen::Vector3d xyz = Eigen::Vector3d::Zero();
-  double yaw = 0;
+  Eigen::Vector3d armor_xyz_for_pitch = Eigen::Vector3d::Zero();
   auto min_dist = 1e10;
 
   for (auto & xyza : target.armor_xyza_list()) {
     auto dist = xyza.head<2>().norm();
     if (dist < min_dist) {
       min_dist = dist;
-      xyz = xyza.head<3>();
-      yaw = xyza[3];
+      armor_xyz_for_pitch = xyza.head<3>();
     }
   }
-  debug_xyza = Eigen::Vector4d(xyz.x(), xyz.y(), xyz.z(), yaw);
+  auto ekf_x = target.ekf_x();
+  double yaw =
+    (use_center_aim_when_high_speed_ && std::abs(ekf_x[7]) > decision_speed_)
+      ? std::atan2(ekf_x[2], ekf_x[0])
+      : std::atan2(armor_xyz_for_pitch.y(), armor_xyz_for_pitch.x());
+  debug_xyza = Eigen::Vector4d(armor_xyz_for_pitch.x(), armor_xyz_for_pitch.y(), armor_xyz_for_pitch.z(), yaw);
 
-  auto azim = std::atan2(xyz.y(), xyz.x());
-  auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
+  auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, armor_xyz_for_pitch.z());
   if (bullet_traj.unsolvable) throw std::runtime_error("Unsolvable bullet trajectory!");
 
-  return {tools::limit_rad(azim + yaw_offset_), -bullet_traj.pitch - pitch_offset_};
+  return {tools::limit_rad(yaw + yaw_offset_), -bullet_traj.pitch - pitch_offset_};
 }
 
 Trajectory Planner::get_trajectory(Target & target, double yaw0, double bullet_speed)

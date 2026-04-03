@@ -50,7 +50,7 @@ int main(int argc, char * argv[])
   }
 
   tools::Exiter exiter;
-  tools::Plotter plotter;
+  tools::Plotter plotter("127.0.0.1", 9870);
 
   io::CBoard cboard(config_path);
 
@@ -111,10 +111,12 @@ int main(int argc, char * argv[])
         data["cmd_yaw"] = command.yaw * 57.3;
         data["last_cmd_yaw"] = last_command.yaw * 57.3;
         data["gimbal_yaw"] = eulers[0] * 57.3;
-      } else {
+        data["find_bool"] = command.control; // 0/1
+      } else {+
         data["cmd_pitch"] = command.pitch * 57.3;
         data["last_cmd_pitch"] = last_command.pitch * 57.3;
         data["gimbal_pitch"] = eulers[1] * 57.3;
+        data["find_bool"] = command.control; // 0/1
       }
       data["t"] = tools::delta_time(std::chrono::steady_clock::now(), t0);
       last_command = command;
@@ -134,6 +136,7 @@ int main(int argc, char * argv[])
       data["cmd_yaw"] = command.yaw * 57.3;
       data["last_cmd_yaw"] = last_command.yaw * 57.3;
       data["gimbal_yaw"] = eulers[0] * 57.3;
+      data["find_bool"] = command.control;
       last_command = command;
       plotter.plot(data);
       std::this_thread::sleep_for(8ms);  //模拟自瞄100fps
@@ -157,6 +160,7 @@ int main(int argc, char * argv[])
       data["cmd_pitch"] = command.pitch * 57.3;
       data["gimbal_yaw"] = eulers[0] * 57.3;
       data["gimbal_pitch"] = eulers[1] * 57.3;
+      data["find_bool"] = command.control;
       plotter.plot(data);
       std::this_thread::sleep_for(9ms);
     }

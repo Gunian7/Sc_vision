@@ -49,6 +49,7 @@ private:
   double high_speed_delay_time_;
   double low_speed_delay_time_;
   double decision_speed_;
+  bool use_center_aim_when_high_speed_;
   double jump_pitch_up_;
   double jump_pitch_down_;
   double jump_pitch_up_duration_;

@@ -28,6 +28,10 @@ Aimer::Aimer(const std::string & config_path)
   high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
   low_speed_delay_time_ = yaml["low_speed_delay_time"].as<double>();
   decision_speed_ = yaml["decision_speed"].as<double>();
+  use_center_aim_when_high_speed_ = true;
+  if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
+    use_center_aim_when_high_speed_ = yaml["use_center_aim_when_high_speed"].as<bool>();
+  }
   speed_angle_ = decision_speed_;
   speed_angle_max_ = speed_angle_;
   if (yaml["comming_angle_high"].IsDefined()) {
@@ -134,6 +138,7 @@ io::Command Aimer::aim(
   double prev_fly_time = trajectory0.fly_time;
   tools::Trajectory current_traj = trajectory0;
   std::vector<Target> iteration_target(10, target);  // 创建10个目标副本用于迭代预测
+  Target final_target = target;
 
   for (int iter = 0; iter < 10; ++iter) {
     // 预测目标在 future + prev_fly_time 时刻的位置
@@ -143,6 +148,7 @@ io::Command Aimer::aim(
     // 计算瞄准点
     auto aim_point = choose_aim_point(iteration_target[iter]);
     debug_aim_point = aim_point;
+    final_target = iteration_target[iter];
     if (!aim_point.valid) {
       return {false, false, 0, 0, 0, 0, 0, 0};
     }
@@ -169,9 +175,15 @@ io::Command Aimer::aim(
     prev_fly_time = current_traj.fly_time;
   }
 
-  // 计算最终角度
-  Eigen::Vector3d final_xyz = debug_aim_point.xyza.head(3);
-  double yaw = std::atan2(final_xyz.y(), final_xyz.x()) + yaw_offset_;
+  // 计算最终角度：yaw可选车心，pitch始终来自装甲板弹道
+  Eigen::Vector3d armor_xyz_for_pitch = debug_aim_point.xyza.head(3);
+  auto final_ekf_x = final_target.ekf_x();
+  double yaw;
+  if (use_center_aim_when_high_speed_ && std::abs(final_ekf_x[7]) > decision_speed_) {
+    yaw = std::atan2(final_ekf_x[2], final_ekf_x[0]) + yaw_offset_;
+  } else {
+    yaw = std::atan2(armor_xyz_for_pitch.y(), armor_xyz_for_pitch.x()) + yaw_offset_;
+  }
   double jump_correction = 0.0;
   if (target.has_jump_time() && std::abs(target.ekf_x()[7]) >= decision_speed_) {
     auto age = std::chrono::duration<double>(timestamp - target.last_jump_time()).count();
