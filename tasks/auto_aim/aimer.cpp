@@ -60,22 +60,6 @@ Aimer::Aimer(const std::string & config_path)
   } else {
     speed_angle_max_ = speed_angle_;
   }
-  jump_pitch_up_ = 0.0;
-  jump_pitch_down_ = 0.0;
-  jump_pitch_up_duration_ = 0.0;
-  jump_pitch_down_duration_ = 0.0;
-  if (yaml["jump_pitch_up"].IsDefined()) {
-    jump_pitch_up_ = yaml["jump_pitch_up"].as<double>() / 57.3;
-  }
-  if (yaml["jump_pitch_down"].IsDefined()) {
-    jump_pitch_down_ = yaml["jump_pitch_down"].as<double>() / 57.3;
-  }
-  if (yaml["jump_pitch_up_duration"].IsDefined()) {
-    jump_pitch_up_duration_ = yaml["jump_pitch_up_duration"].as<double>();
-  }
-  if (yaml["jump_pitch_down_duration"].IsDefined()) {
-    jump_pitch_down_duration_ = yaml["jump_pitch_down_duration"].as<double>();
-  }
   if (yaml["left_yaw_offset"].IsDefined() && yaml["right_yaw_offset"].IsDefined()) {
     left_yaw_offset_ = yaml["left_yaw_offset"].as<double>() / 57.3;    // degree to rad
     right_yaw_offset_ = yaml["right_yaw_offset"].as<double>() / 57.3;  // degree to rad
@@ -184,19 +168,7 @@ io::Command Aimer::aim(
   } else {
     yaw = std::atan2(armor_xyz_for_pitch.y(), armor_xyz_for_pitch.x()) + yaw_offset_;
   }
-  double jump_correction = 0.0;
-  if (target.has_jump_time() && std::abs(target.ekf_x()[7]) >= decision_speed_) {
-    auto age = std::chrono::duration<double>(timestamp - target.last_jump_time()).count();
-    auto dir = target.last_jump_dir();
-    if (dir < 0 && jump_pitch_up_duration_ > 0.0 && age >= 0.0 && age <= jump_pitch_up_duration_) {
-      jump_correction = jump_pitch_up_;
-    }
-    if (dir > 0 && jump_pitch_down_duration_ > 0.0 && age >= 0.0 && age <= jump_pitch_down_duration_) {
-      jump_correction = -jump_pitch_down_;
-    }
-  }
-
-  double pitch = -(current_traj.pitch + pitch_offset_ + jump_correction);
+  double pitch = -(current_traj.pitch + pitch_offset_);
   return {true, false, yaw, pitch, 0, 0, 0, 0};
 }
 
@@ -232,7 +204,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
 
   // 如果delta_angle为0，则该装甲板中心和整车中心的连线在世界坐标系的xy平面过原点
   std::vector<double> delta_angle_list;
-  for (int i = 0; i < armor_num; i++) {
+  for (std::size_t i = 0; i < armor_num; i++) {
     auto delta_angle = tools::limit_rad(armor_xyza_list[i][3] - center_yaw);
     delta_angle_list.emplace_back(delta_angle);
   }
@@ -241,9 +213,9 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   if (std::abs(target.ekf_x()[8]) <= 2 && target.name != ArmorName::outpost) {
     // 选择在可射击范围内的装甲板
     std::vector<int> id_list;
-    for (int i = 0; i < armor_num; i++) {
+    for (std::size_t i = 0; i < armor_num; i++) {
       if (std::abs(delta_angle_list[i]) > 60 / 57.3) continue;
-      id_list.push_back(i);
+      id_list.push_back(static_cast<int>(i));
     }
     // 绝无可能
     if (id_list.empty()) {
@@ -288,7 +260,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   }
 
   // 在小陀螺时，一侧的装甲板不断出现，另一侧的装甲板不断消失，显然前者被打中的概率更高
-  for (int i = 0; i < armor_num; i++) {
+  for (std::size_t i = 0; i < armor_num; i++) {
     if (std::abs(delta_angle_list[i]) > coming_angle) continue;
     if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
     if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};

@@ -46,11 +46,9 @@ public:
   int last_jump_dir() const;
   bool has_jump_time() const;
   std::chrono::steady_clock::time_point last_jump_time() const;
-  void set_jump_params(double z_threshold, int confirm_count);
+  void set_jump_params(double z_threshold, double yaw_threshold_rad, int confirm_count);
   void set_jump_avg_alpha(double alpha);
   void set_jump_fire_cooldown(double seconds);
-  void set_jump_fire_cooldown_params(
-    double min_seconds, double max_seconds, double speed_start, double speed_end);
   void set_jump_min_interval(double seconds);
   void set_process_noise(
     double linear_acc_normal, double angular_acc_normal, double linear_acc_outpost,
@@ -78,6 +76,7 @@ private:
   bool has_jump_time_;
   std::chrono::steady_clock::time_point last_jump_time_;
   double jump_z_threshold_;
+  double jump_yaw_threshold_rad_;
   int jump_confirm_count_;
   int jump_pending_dir_;
   int jump_pending_count_;
@@ -85,10 +84,6 @@ private:
   std::array<double, 4> jump_avg_z_;
   std::array<bool, 4> jump_avg_inited_;
   double jump_fire_cooldown_;
-  double jump_fire_cooldown_min_;
-  double jump_fire_cooldown_max_;
-  double jump_fire_cooldown_speed_start_;
-  double jump_fire_cooldown_speed_end_;
   double jump_min_interval_;
   double process_noise_linear_normal_;
   double process_noise_angular_normal_;

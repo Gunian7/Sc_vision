@@ -50,10 +50,6 @@ private:
   double low_speed_delay_time_;
   double decision_speed_;
   bool use_center_aim_when_high_speed_;
-  double jump_pitch_up_;
-  double jump_pitch_down_;
-  double jump_pitch_up_duration_;
-  double jump_pitch_down_duration_;
 
   AimPoint choose_aim_point(const Target & target);
 };

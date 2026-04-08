@@ -36,7 +36,7 @@ Plan Planner::plan(Target target, double bullet_speed)
   }
 
   // 1. Predict fly_time
-  Eigen::Vector3d xyz;
+  Eigen::Vector3d xyz = Eigen::Vector3d::Zero();
   auto min_dist = 1e10;
   for (auto & xyza : target.armor_xyza_list()) {
     auto dist = xyza.head<2>().norm();
@@ -44,6 +44,9 @@ Plan Planner::plan(Target target, double bullet_speed)
       min_dist = dist;
       xyz = xyza.head<3>();
     }
+  }
+  if (min_dist >= 1e9) {
+    return {false};
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
   target.predict(bullet_traj.fly_time);

@@ -37,24 +37,17 @@ min_confidence: 0.8
 min_detect_count: 5
 max_temp_lost_count: 15
 outpost_max_temp_lost_count: 75
-jump_z_threshold: 0.02 # m
+jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_z_threshold: 0.02 # m 前哨站仍按z跳变判定
 jump_confirm_count: 2
 jump_avg_alpha: 0.5
 jump_fire_cooldown: 0.0 # s
-jump_min_interval: 0.0 # s
-
-#####-----aimer参数-----#####
-yaw_offset: 1.5 # degree
 pitch_offset: -0.5 # degree
 comming_angle: 60 # degree
 leaving_angle: 20 # degree
 decision_speed: 7 # rad/s
 high_speed_delay_time: 0.050 # s
 low_speed_delay_time: 0.015 # s
-jump_pitch_up: 0.0 # degree
-jump_pitch_down: 0.0 # degree
-jump_pitch_up_duration: 0.0 # s
-jump_pitch_down_duration: 0.0 # s
 
 #####-----shooter参数-----#####
 first_tolerance: 100 # 近距离射击容差，degree

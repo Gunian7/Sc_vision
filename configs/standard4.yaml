@@ -45,19 +45,12 @@ outpost_leaving_angle: 30 # degree 前哨站离开视野角度
 outpost_max_temp_lost_count: 75
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
-jump_z_threshold: 0.03 # m
+jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_z_threshold: 0.03 # m 前哨站仍按z跳变判定
 jump_confirm_count: 3
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
 jump_fire_cooldown: 0.0 # s 固定延时(不使用动态参数时生效)
-jump_fire_cooldown_min: 0.0 # s 低速跳变发弹延时
-jump_fire_cooldown_max: 0.0 # s 高速跳变发弹延时
 outpost_jump_fire_cooldown: 0.02 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
-jump_fire_cooldown_speed_start: 3.0 # rad/s 低速起点
-jump_fire_cooldown_speed_end: 10.0 # rad/s 高速终点
-jump_pitch_up: 0.3 # degree  装甲板跳变修正量
-jump_pitch_down: 1.5 # degree
-jump_pitch_up_duration: 0.0 # s
-jump_pitch_down_duration: 0.0 # s
 jump_min_interval: 0.01 # s 跳变最小间隔
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100

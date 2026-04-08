@@ -25,14 +25,10 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   outpost_max_temp_lost_count_ = yaml["outpost_max_temp_lost_count"].as<int>();
   normal_temp_lost_count_ = max_temp_lost_count_;
   jump_z_threshold_ = 0.02;
+  jump_yaw_threshold_rad_ = 40.0 / 57.3;
   jump_confirm_count_ = 2;
   jump_avg_alpha_ = 1.0;
   jump_fire_cooldown_ = 0.0;
-  jump_fire_cooldown_min_ = 0.0;
-  jump_fire_cooldown_max_ = 0.0;
-  jump_fire_cooldown_speed_start_ = 0.0;
-  jump_fire_cooldown_speed_end_ = 0.0;
-  jump_fire_cooldown_dynamic_ = false;
   outpost_jump_fire_cooldown_ = 0.0;
   jump_min_interval_ = 0.0;
   process_noise_linear_normal_ = 100.0;
@@ -44,6 +40,9 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["jump_z_threshold"].IsDefined()) {
     jump_z_threshold_ = yaml["jump_z_threshold"].as<double>();
   }
+  if (yaml["jump_yaw_threshold_deg"].IsDefined()) {
+    jump_yaw_threshold_rad_ = yaml["jump_yaw_threshold_deg"].as<double>() / 57.3;
+  }
   if (yaml["jump_confirm_count"].IsDefined()) {
     jump_confirm_count_ = yaml["jump_confirm_count"].as<int>();
   }
@@ -52,22 +51,6 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
   if (yaml["jump_fire_cooldown"].IsDefined()) {
     jump_fire_cooldown_ = yaml["jump_fire_cooldown"].as<double>();
-  }
-  if (yaml["jump_fire_cooldown_min"].IsDefined()) {
-    jump_fire_cooldown_min_ = yaml["jump_fire_cooldown_min"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_max"].IsDefined()) {
-    jump_fire_cooldown_max_ = yaml["jump_fire_cooldown_max"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_speed_start"].IsDefined()) {
-    jump_fire_cooldown_speed_start_ = yaml["jump_fire_cooldown_speed_start"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_speed_end"].IsDefined()) {
-    jump_fire_cooldown_speed_end_ = yaml["jump_fire_cooldown_speed_end"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
   }
   if (yaml["outpost_jump_fire_cooldown"].IsDefined()) {
     outpost_jump_fire_cooldown_ = yaml["outpost_jump_fire_cooldown"].as<double>();
@@ -351,7 +334,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
-  target_.set_jump_params(jump_z_threshold_, jump_confirm_count_);
+  target_.set_jump_params(jump_z_threshold_, jump_yaw_threshold_rad_, jump_confirm_count_);
   target_.set_jump_avg_alpha(jump_avg_alpha_);
   target_.set_process_noise(
     process_noise_linear_normal_, process_noise_angular_normal_, process_noise_linear_outpost_,
@@ -359,10 +342,6 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   target_.set_measurement_noise(measurement_noise_yaw_, measurement_noise_pitch_);
   if (armor.name == ArmorName::outpost && outpost_jump_fire_cooldown_ > 0.0) {
     target_.set_jump_fire_cooldown(outpost_jump_fire_cooldown_);
-  } else if (jump_fire_cooldown_dynamic_) {
-    target_.set_jump_fire_cooldown_params(
-      jump_fire_cooldown_min_, jump_fire_cooldown_max_, jump_fire_cooldown_speed_start_,
-      jump_fire_cooldown_speed_end_);
   } else {
     target_.set_jump_fire_cooldown(jump_fire_cooldown_);
   }

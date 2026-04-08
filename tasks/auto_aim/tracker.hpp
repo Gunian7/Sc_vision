@@ -39,14 +39,10 @@ private:
   int outpost_max_temp_lost_count_;
   int normal_temp_lost_count_;
   double jump_z_threshold_;
+  double jump_yaw_threshold_rad_;
   int jump_confirm_count_;
   double jump_avg_alpha_;
   double jump_fire_cooldown_;
-  double jump_fire_cooldown_min_;
-  double jump_fire_cooldown_max_;
-  double jump_fire_cooldown_speed_start_;
-  double jump_fire_cooldown_speed_end_;
-  bool jump_fire_cooldown_dynamic_;
   double outpost_jump_fire_cooldown_;
   double jump_min_interval_;
   double process_noise_linear_normal_;

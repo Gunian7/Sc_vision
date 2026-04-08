@@ -11,10 +11,6 @@ yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
 min_confidence: 0.8
-use_traditional: true
-
-#####-----ROI-----#####
-roi: 
   x: 420
   y: 50
   width: 600
@@ -65,7 +61,8 @@ can_interface: "can0"
 min_detect_count: 5
 max_temp_lost_count: 15
 outpost_max_temp_lost_count: 150
-jump_z_threshold: 0.02 # m
+jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_z_threshold: 0.02 # m 前哨站仍按z跳变判定
 jump_confirm_count: 2
 jump_avg_alpha: 0.5
 jump_fire_cooldown: 0.0 # s
@@ -80,10 +77,6 @@ min_spin_speed: 2 # rad/s
 decision_speed: 12 # rad/s
 high_speed_delay_time: 0.005 # s
 low_speed_delay_time: 0.005 # s
-jump_pitch_up: 0.0 # degree
-jump_pitch_down: 0.0 # degree
-jump_pitch_up_duration: 0.0 # s
-jump_pitch_down_duration: 0.0 # s
 
 #####-----decider参数-----#####
 mode: 1

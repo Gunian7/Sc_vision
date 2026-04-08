@@ -23,15 +23,12 @@ Target::Target(
   last_jump_dir_(0),
   has_jump_time_(false),
   jump_z_threshold_(0.02),
+  jump_yaw_threshold_rad_(40.0 / 57.3),
   jump_confirm_count_(1),
   jump_pending_dir_(0),
   jump_pending_count_(0),
   jump_avg_alpha_(1.0),
   jump_fire_cooldown_(0.0),
-  jump_fire_cooldown_min_(0.0),
-  jump_fire_cooldown_max_(0.0),
-  jump_fire_cooldown_speed_start_(0.0),
-  jump_fire_cooldown_speed_end_(0.0),
   jump_min_interval_(0.0),
   process_noise_linear_normal_(100.0),
   process_noise_angular_normal_(400.0),
@@ -95,6 +92,7 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   last_jump_dir_ = 0;
   has_jump_time_ = false;
   jump_z_threshold_ = 0.02;
+  jump_yaw_threshold_rad_ = 40.0 / 57.3;
   jump_confirm_count_ = 1;
   jump_pending_dir_ = 0;
   jump_pending_count_ = 0;
@@ -102,10 +100,6 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   jump_avg_z_.fill(0.0);
   jump_avg_inited_.fill(false);
   jump_fire_cooldown_ = 0.0;
-  jump_fire_cooldown_min_ = 0.0;
-  jump_fire_cooldown_max_ = 0.0;
-  jump_fire_cooldown_speed_start_ = 0.0;
-  jump_fire_cooldown_speed_end_ = 0.0;
   jump_min_interval_ = 0.0;
   process_noise_linear_normal_ = 100.0;
   process_noise_angular_normal_ = 400.0;
@@ -271,24 +265,34 @@ void Target::update(const Armor & armor)
 
   if (id != last_id) {
     int candidate_dir = 0;
+    double delta_yaw = 0.0;
     double delta_z = 0.0;
-    if (name == ArmorName::outpost && armor_num_ == 3 && height_init_done_) {
+    bool is_outpost_z_mode = (name == ArmorName::outpost && armor_num_ == 3 && height_init_done_);
+    if (is_outpost_z_mode) {
       auto prev_offset = height_offsets_[last_id];
       auto new_offset = height_offsets_[id];
       delta_z = new_offset - prev_offset;
-    } else if (
-      static_cast<int>(xyza_list.size()) > std::max(id, last_id) &&
-      jump_avg_inited_[id] && jump_avg_inited_[last_id]) {
-      auto prev_z = jump_avg_z_[last_id];
-      auto new_z = jump_avg_z_[id];
-      delta_z = new_z - prev_z;
+      if (std::abs(delta_z) >= jump_z_threshold_) {
+        candidate_dir = (delta_z > 0) ? 1 : -1;
+      }
+    } else {
+      if (static_cast<int>(xyza_list.size()) > std::max(id, last_id)) {
+        auto prev_yaw = xyza_list[last_id][3];
+        auto new_yaw = xyza_list[id][3];
+        delta_yaw = tools::limit_rad(new_yaw - prev_yaw);
+      }
+      if (std::abs(delta_yaw) >= jump_yaw_threshold_rad_) {
+        candidate_dir = (delta_yaw > 0) ? 1 : -1;
+      }
     }
 
-    if (std::abs(delta_z) >= jump_z_threshold_) {
-      candidate_dir = (delta_z > 0) ? 1 : -1;
-    } else {
-      tools::logger()->info(
-        "[Target] Jump detected: roughly same height (dz={:.3f})", delta_z);
+    if (candidate_dir == 0) {
+      if (is_outpost_z_mode) {
+        tools::logger()->info("[Target] Jump detected: outpost dz too small (dz={:.3f} m)", delta_z);
+      } else {
+        tools::logger()->info(
+          "[Target] Jump detected: yaw change too small (dyaw={:.2f} deg)", delta_yaw * 57.3);
+      }
     }
 
     if (candidate_dir != 0) {
@@ -311,10 +315,20 @@ void Target::update(const Armor & armor)
           last_jump_dir_ = candidate_dir;
           last_jump_time_ = t_;
           has_jump_time_ = true;
-          if (candidate_dir < 0) {
-            tools::logger()->info("[Target] Jump confirmed: high -> low (dz={:.3f})", delta_z);
+          if (is_outpost_z_mode) {
+            if (candidate_dir < 0) {
+              tools::logger()->info("[Target] Jump confirmed by outpost z: high -> low (dz={:.3f} m)", delta_z);
+            } else {
+              tools::logger()->info("[Target] Jump confirmed by outpost z: low -> high (dz={:.3f} m)", delta_z);
+            }
           } else {
-            tools::logger()->info("[Target] Jump confirmed: low -> high (dz={:.3f})", delta_z);
+            if (candidate_dir < 0) {
+              tools::logger()->info(
+                "[Target] Jump confirmed by yaw: ccw -> cw (dyaw={:.2f} deg)", delta_yaw * 57.3);
+            } else {
+              tools::logger()->info(
+                "[Target] Jump confirmed by yaw: cw -> ccw (dyaw={:.2f} deg)", delta_yaw * 57.3);
+            }
           }
         }
         jump_pending_count_ = 0;
@@ -489,9 +503,10 @@ bool Target::has_jump_time() const { return has_jump_time_; }
 
 std::chrono::steady_clock::time_point Target::last_jump_time() const { return last_jump_time_; }
 
-void Target::set_jump_params(double z_threshold, int confirm_count)
+void Target::set_jump_params(double z_threshold, double yaw_threshold_rad, int confirm_count)
 {
-  jump_z_threshold_ = z_threshold;
+  jump_z_threshold_ = std::max(0.0, z_threshold);
+  jump_yaw_threshold_rad_ = std::max(0.0, yaw_threshold_rad);
   jump_confirm_count_ = std::max(1, confirm_count);
 }
 
@@ -503,32 +518,6 @@ void Target::set_jump_avg_alpha(double alpha)
 void Target::set_jump_fire_cooldown(double seconds)
 {
   jump_fire_cooldown_ = std::max(0.0, seconds);
-}
-
-void Target::set_jump_fire_cooldown_params(
-  double min_seconds, double max_seconds, double speed_start, double speed_end)
-{
-  jump_fire_cooldown_min_ = std::max(0.0, min_seconds);
-  jump_fire_cooldown_max_ = std::max(0.0, max_seconds);
-  jump_fire_cooldown_speed_start_ = speed_start;
-  jump_fire_cooldown_speed_end_ = speed_end;
-
-  if (jump_fire_cooldown_max_ < jump_fire_cooldown_min_) {
-    std::swap(jump_fire_cooldown_min_, jump_fire_cooldown_max_);
-  }
-
-  const double abs_w = std::abs(ekf_.x[7]);
-  if (jump_fire_cooldown_speed_end_ <= jump_fire_cooldown_speed_start_) {
-    jump_fire_cooldown_ = jump_fire_cooldown_min_;
-    return;
-  }
-
-  const double ratio = std::clamp(
-    (abs_w - jump_fire_cooldown_speed_start_) /
-      (jump_fire_cooldown_speed_end_ - jump_fire_cooldown_speed_start_),
-    0.0, 1.0);
-  jump_fire_cooldown_ = jump_fire_cooldown_min_ +
-                        ratio * (jump_fire_cooldown_max_ - jump_fire_cooldown_min_);
 }
 
 void Target::set_jump_min_interval(double seconds)
