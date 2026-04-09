@@ -11,6 +11,7 @@ add_library(auto_aim OBJECT
     classifier.cpp 
     detector.cpp
     solver.cpp
+    imm.cpp
     aimer.cpp
     target.cpp
     tracker.cpp

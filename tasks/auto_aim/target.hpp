@@ -15,6 +15,16 @@
 namespace auto_aim
 {
 
+enum class MotionState : int
+{
+  static_state = 0,
+  translate = 1,
+  spin_slow_inplace = 2,
+  move_slow_spin = 3,
+  spin_fast_inplace = 4,
+  spin_variable = 5
+};
+
 class Target
 {
 public:
@@ -56,6 +66,11 @@ public:
   void set_measurement_noise(double yaw_noise, double pitch_noise);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
   void set_angular_velocity(double angular_velocity);
+  void set_motion_state(MotionState state) { motion_state_ = state; }
+  MotionState motion_state() const { return motion_state_; }
+  void set_imm_output(double w, double alpha) { imm_w_ = w; imm_alpha_ = alpha; }
+  double imm_w() const { return imm_w_; }
+  double imm_alpha() const { return imm_alpha_; }
 
   bool isinit = false;
 
@@ -91,6 +106,9 @@ private:
   double process_noise_angular_outpost_;
   double measurement_noise_yaw_;
   double measurement_noise_pitch_;
+  MotionState motion_state_;
+  double imm_w_;
+  double imm_alpha_;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;

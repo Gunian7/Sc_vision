@@ -36,6 +36,9 @@ Target::Target(
   process_noise_angular_outpost_(0.1),
   measurement_noise_yaw_(2e-3),
   measurement_noise_pitch_(2e-3),
+  motion_state_(MotionState::static_state),
+  imm_w_(0.0),
+  imm_alpha_(0.0),
   t_(t)
 {
   auto r = radius;
@@ -107,6 +110,9 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   process_noise_angular_outpost_ = 0.1;
   measurement_noise_yaw_ = 2e-3;
   measurement_noise_pitch_ = 2e-3;
+  motion_state_ = MotionState::static_state;
+  imm_w_ = 0.0;
+  imm_alpha_ = 0.0;
   for (auto & samples : height_samples_) {
     samples.clear();
   }
