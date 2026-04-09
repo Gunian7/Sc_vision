@@ -7,6 +7,7 @@
 
 #include "io/cboard.hpp"
 #include "io/command.hpp"
+#include "auto_aim_fsm.hpp"
 #include "target.hpp"
 
 namespace auto_aim
@@ -45,11 +46,14 @@ private:
   double speed_angle_max_;
   double outpost_comming_angle_;
   double outpost_leaving_angle_;
-  double lock_id_ = -1;
+  int lock_id_ = -1;
   double high_speed_delay_time_;
   double low_speed_delay_time_;
   double decision_speed_;
   bool use_center_aim_when_high_speed_;
+  bool fsm_enable_;
+  AutoAimFsmController fsm_controller_;
+  AutoAimFsm fsm_state_;
 
   AimPoint choose_aim_point(const Target & target);
 };
