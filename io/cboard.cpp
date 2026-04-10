@@ -171,6 +171,14 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
     auto timestamp = std::chrono::steady_clock::now();
 
     Autoaim_s data = reinterpret_cast<Autoaim_s&>(msg.data);
+    if (data.mode < MODES.size()) {
+        mode = static_cast<Mode>(data.mode);
+    } else if (cboard_debug_log_) {
+        tools::logger()->warn(
+            "[CBoard] Invalid mode from MCU: {} (keep current {})",
+            static_cast<int>(data.mode), io::MODES[mode]);
+    }
+
     double raw_bullet_speed = data.bullet_speed;
     if (use_default_bullet_speed_) {
         this->bullet_speed = default_bullet_speed_;
