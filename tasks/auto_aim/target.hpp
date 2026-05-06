@@ -15,6 +15,16 @@
 namespace auto_aim
 {
 
+enum class MotionState : int
+{
+  static_state = 0,
+  translate = 1,
+  spin_slow_inplace = 2,
+  move_slow_spin = 3,
+  spin_fast_inplace = 4,
+  spin_variable = 5
+};
+
 class Target
 {
 public:
@@ -46,11 +56,9 @@ public:
   int last_jump_dir() const;
   bool has_jump_time() const;
   std::chrono::steady_clock::time_point last_jump_time() const;
-  void set_jump_params(double z_threshold, int confirm_count);
+  void set_jump_params(double z_threshold, double yaw_threshold_rad, int confirm_count);
   void set_jump_avg_alpha(double alpha);
   void set_jump_fire_cooldown(double seconds);
-  void set_jump_fire_cooldown_params(
-    double min_seconds, double max_seconds, double speed_start, double speed_end);
   void set_jump_min_interval(double seconds);
   void set_process_noise(
     double linear_acc_normal, double angular_acc_normal, double linear_acc_outpost,
@@ -58,6 +66,11 @@ public:
   void set_measurement_noise(double yaw_noise, double pitch_noise);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
   void set_angular_velocity(double angular_velocity);
+  void set_motion_state(MotionState state) { motion_state_ = state; }
+  MotionState motion_state() const { return motion_state_; }
+  void set_imm_output(double w, double alpha) { imm_w_ = w; imm_alpha_ = alpha; }
+  double imm_w() const { return imm_w_; }
+  double imm_alpha() const { return imm_alpha_; }
 
   bool isinit = false;
 
@@ -78,6 +91,7 @@ private:
   bool has_jump_time_;
   std::chrono::steady_clock::time_point last_jump_time_;
   double jump_z_threshold_;
+  double jump_yaw_threshold_rad_;
   int jump_confirm_count_;
   int jump_pending_dir_;
   int jump_pending_count_;
@@ -85,10 +99,6 @@ private:
   std::array<double, 4> jump_avg_z_;
   std::array<bool, 4> jump_avg_inited_;
   double jump_fire_cooldown_;
-  double jump_fire_cooldown_min_;
-  double jump_fire_cooldown_max_;
-  double jump_fire_cooldown_speed_start_;
-  double jump_fire_cooldown_speed_end_;
   double jump_min_interval_;
   double process_noise_linear_normal_;
   double process_noise_angular_normal_;
@@ -96,6 +106,9 @@ private:
   double process_noise_angular_outpost_;
   double measurement_noise_yaw_;
   double measurement_noise_pitch_;
+  MotionState motion_state_;
+  double imm_w_;
+  double imm_alpha_;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;

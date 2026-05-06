@@ -2,15 +2,14 @@
 enemy_color: "blue"
 
 #####-----神经网络参数-----#####
-yolo_name: yolov5
+yolo_name: yolo11
 classify_model: assets/tiny_resnet.onnx
 yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
-min_confidence: 0.6
-use_traditional: false
+min_confidence: 0.70
 #   x: 290
 #   y: 450
 #   width: 750
@@ -47,30 +46,27 @@ outpost_leaving_angle: 30 # degree 前哨站离开视野角度
 outpost_max_temp_lost_count: 75
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
-jump_z_threshold: 0.02 # m
+jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_z_threshold: 0.02 # m 前哨站仍按z跳变判定
 jump_confirm_count: 1
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
 jump_fire_cooldown: 0.0 # s 固定延时(不使用动态参数时生效)
-jump_fire_cooldown_min: 0.05 # s 低速跳变发弹延时
-jump_fire_cooldown_max: 0.20 # s 高速跳变发弹延时
 outpost_jump_fire_cooldown: 0.08 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
-jump_fire_cooldown_speed_start: 3.0 # rad/s 低速起点
-jump_fire_cooldown_speed_end: 10.0 # rad/s 高速终点
-jump_pitch_up: 0.3 # degree  装甲板跳变修正量
-jump_pitch_down: 1.5 # degree
-jump_pitch_up_duration: 0.15 # s
-jump_pitch_down_duration: 0.25 # s
 jump_min_interval: 0.15 # s 跳变最小间隔
-
-# 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
-target_process_noise_linear_normal: 100.0
-target_process_noise_angular_normal: 400.0
-target_process_noise_linear_outpost: 10.0
-target_process_noise_angular_outpost: 0.1
-# 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
-target_measurement_noise_yaw: 0.002
-target_measurement_noise_pitch: 0.002
-
+motion_state_enable: true
+enable_imm: true
+motion_w_low: 1.2 # rad/s
+motion_w_high: 6.0 # rad/s
+motion_dw_high: 8.0 # rad/s^2
+imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3
+imm_r_yaw: 0.002
+imm_q_slow: [1e-4, 8e-2, 1e-1] # [yaw,w,alpha]
+imm_q_constant: [1e-4, 2e-2, 5e-2] # [yaw,w,alpha]
+imm_q_variable: [2e-4, 2e-1, 8e-1] # [yaw,w,alpha]
+imm_alpha_decay_slow: 0.2
+imm_alpha_decay_constant: 0.5
+imm_dt_min: 0.001
+imm_dt_max: 0.2
 #####-----aimer参数-----#####
 yaw_offset: 1.5   # degree 1.5
 pitch_offset: 10.5 # degree 2
@@ -93,8 +89,7 @@ judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 
 camera_name: "mindvision"
-# exposure_ms: 2.8
-exposure_ms: 7
+exposure_ms: 3.3
 gamma: 0.9
 gain: 0.0   
 vid_pid: "f622:0001"
@@ -110,10 +105,9 @@ vid_pid: "f622:0001"
 #  0  0  1
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-# 右哨兵镜头
-camera_matrix: [1584.1476814894274, 0.0, 684.5423361405817, 0.0, 1581.619844235029, 551.5614161848434, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.34737537143343256, 0.17176200142397394, 0.0003773447870028847, 0.0007912615681297225, 0.0]
-
+# 重投影误差: 0.1820px
+camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
 
 
 # 相机同理想情况的偏角: yaw1.44 pitch-7.28 roll0.96 degree
@@ -124,7 +118,10 @@ distort_coeffs: [-0.34737537143343256, 0.17176200142397394, 0.000377344787002884
 
 # original setup don't change
 
-R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]
+
+R_camera2gimbal: [-0.027182119030230909, -0.12616154330853446, 0.99163723074269183, -0.99949106557517331, 0.019998323121329122, -0.024853106601381177, -0.016695575474690555, -0.99180811252093692, -0.12664093215554434]
+# t_camera2gimbal: [0.13160669975045827, 0.10377721766577375, 0.024908271912914642]
+# t_camera2gimbal: [0.1060669975045827, 0.063421766577375, 0.07071912914642]
 t_camera2gimbal: [0.06060669975045827, 0.001421766577375, 0.08514642]
 
 #####-----cboard参数-----#####
@@ -171,5 +168,3 @@ fire_gap_time: 0.700   # s
 predict_time: 0.120     # s
 
 bullet_speed: 20.0  # m/s
-#####-----Dynamic ROI-----#####
-use_dynamic_roi: false

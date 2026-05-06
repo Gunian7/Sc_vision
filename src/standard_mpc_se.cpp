@@ -23,6 +23,11 @@
 #include "tasks/auto_aim/solver.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
+#include "tasks/auto_buff/buff_aimer.hpp"
+#include "tasks/auto_buff/buff_detector.hpp"
+#include "tasks/auto_buff/buff_solver.hpp"
+#include "tasks/auto_buff/buff_target.hpp"
+#include "tasks/auto_buff/buff_type.hpp"
 #include "tools/exiter.hpp"
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
@@ -107,6 +112,12 @@ int main(int argc, char* argv[]) {
     auto_aim::Aimer aimer(config_path);
     auto_aim::Shooter shooter(config_path);
 
+    auto_buff::Buff_Detector buff_detector(config_path);
+    auto_buff::Solver buff_solver(config_path);
+    auto_buff::SmallTarget buff_small_target;
+    auto_buff::BigTarget buff_big_target;
+    auto_buff::Aimer buff_aimer(config_path);
+
     cv::Mat img;
     Eigen::Quaterniond q;
     std::chrono::steady_clock::time_point t;
@@ -133,6 +144,37 @@ int main(int argc, char* argv[]) {
         recorder.record(img, q, t);
 
         solver.set_R_gimbal2world(q);
+
+        if (mode == io::Mode::small_buff || mode == io::Mode::big_buff) {
+            buff_solver.set_R_gimbal2world(q);
+            auto power_runes = buff_detector.detect(img);
+            buff_solver.solve(power_runes);
+
+            io::Command buff_command{false, false, 0.0, 0.0, 0.0, 0.0};
+            const double active_bullet_speed = (cboard ? cboard->bullet_speed : config_bullet_speed);
+            if (mode == io::Mode::small_buff) {
+                buff_small_target.get_target(power_runes, t);
+                auto target_copy = buff_small_target;
+                buff_command = buff_aimer.aim(target_copy, t, active_bullet_speed, true);
+            } else {
+                buff_big_target.get_target(power_runes, t);
+                auto target_copy = buff_big_target;
+                buff_command = buff_aimer.aim(target_copy, t, active_bullet_speed, true);
+            }
+            if (cboard) {
+                cboard->send(buff_command);
+            }
+            frame_count++;
+            continue;
+        }
+
+        if (mode != io::Mode::auto_aim && mode != io::Mode::outpost) {
+            if (cboard) {
+                cboard->send({false, false, 0.0, 0.0, 0.0, 0.0});
+            }
+            frame_count++;
+            continue;
+        }
 
         auto yolo_start    = std::chrono::steady_clock::now();
         auto armors        = detector.detect(img);
@@ -182,6 +224,7 @@ int main(int argc, char* argv[]) {
         );
 
         auto yaw                    = ypr[0];
+        auto pitch                  = ypr[1];
 
         tools::draw_text(
             img,
@@ -197,7 +240,7 @@ int main(int argc, char* argv[]) {
         );
         tools::draw_text(
             img,
-            fmt::format("gimbal yaw{:.2f}", yaw * 57.3),
+            fmt::format("gimbal yaw{:.2f}, pitch{:.2f}", yaw * 57.3, pitch * 57.3),
             { 10, 90 },
             { 255, 255, 255 }
         );
@@ -215,7 +258,9 @@ int main(int argc, char* argv[]) {
         }
 
         data["gimbal_yaw"] = yaw * 57.3;
+        data["gimbal_pitch"] = pitch * 57.3;
         data["cmd_yaw"]    = command.yaw * 57.3;
+        data["cmd_pitch"]  = command.pitch * 57.3;
         data["shoot"]      = command.shoot;
 
         if (!targets.empty()) {
@@ -349,6 +394,7 @@ int main(int argc, char* argv[]) {
         frame_count++;
     }
         // 在程序结束时输出识别率
+        
     if (frame_count > 0) {
         double avg_armors_per_frame = static_cast<double>(total_armors) / frame_count;
         double detection_rate = 100.0 * detected_frames / frame_count;

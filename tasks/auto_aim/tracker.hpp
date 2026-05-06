@@ -7,6 +7,7 @@
 #include <string>
 
 #include "armor.hpp"
+#include "imm.hpp"
 #include "solver.hpp"
 #include "target.hpp"
 #include "tasks/omniperception/perceptron.hpp"
@@ -39,14 +40,10 @@ private:
   int outpost_max_temp_lost_count_;
   int normal_temp_lost_count_;
   double jump_z_threshold_;
+  double jump_yaw_threshold_rad_;
   int jump_confirm_count_;
   double jump_avg_alpha_;
   double jump_fire_cooldown_;
-  double jump_fire_cooldown_min_;
-  double jump_fire_cooldown_max_;
-  double jump_fire_cooldown_speed_start_;
-  double jump_fire_cooldown_speed_end_;
-  bool jump_fire_cooldown_dynamic_;
   double outpost_jump_fire_cooldown_;
   double jump_min_interval_;
   double process_noise_linear_normal_;
@@ -61,8 +58,19 @@ private:
   Target target_;
   std::chrono::steady_clock::time_point last_timestamp_;
   ArmorPriority omni_target_priority_;
+  SpinIMM spin_imm_;
+  bool imm_enabled_;
+  bool motion_state_enabled_;
+  double motion_w_low_;
+  double motion_w_high_;
+  double motion_dw_high_;
+  bool imm_initialized_;
+  double imm_last_w_;
+  double imm_dw_lpf_;
+  std::chrono::steady_clock::time_point imm_last_t_;
 
   void state_machine(bool found);
+  void update_motion_state(Target & target, std::chrono::steady_clock::time_point t);
 
   bool set_target(std::list<Armor> & armors, std::chrono::steady_clock::time_point t);
 

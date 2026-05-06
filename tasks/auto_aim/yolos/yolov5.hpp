@@ -6,6 +6,9 @@
 #include <openvino/openvino.hpp>
 #include <string>
 #include <vector>
+#include <memory>
+
+#include "tasks/auto_aim/yolos/infer_request_pool.hpp"
 
 #include "tasks/auto_aim/armor.hpp"
 #include "tasks/auto_aim/detector.hpp"
@@ -45,6 +48,8 @@ private:
 
   ov::Core core_;
   ov::CompiledModel compiled_model_;
+  std::unique_ptr<InferRequestPool> infer_pool_;
+  int num_requests_ = 1;
 
   cv::Rect roi_;
   cv::Point2f offset_;

@@ -1,6 +1,13 @@
 # 快速开始 (Quickstart)
 
-## 编译 (Build)
+## 1. 安装依赖
+在终端中运行setup.bash脚本安装依赖：
+（注意ROS和OpenVINO版本，确保与系统兼容）
+```bash
+bash setup.bash
+```
+
+## 2. 编译 (Build)
 
 ```bash
 cmake -B build
@@ -12,55 +19,49 @@ cmake --build build -j$(nproc)
 ```bash
 cmake --build build --target standard_mpc_se -j$(nproc)
 ```
+io部分可能需要单独colcon build编译，不然找不到对应的serial：
 
----
-
-## 运行 (Run)
+（如果还有报错请移步询问ai，可能需要安装串口库，届时请直接(sudo apt install ros-humble-serial ros-humble-ros2-serial-driver)此为示例）
+```bash
+cd io
+colcon build --symlink-install
+```
+3. 授予串口执行权限
+```bash
+sudo usermod -a -G dialout $USER
+```
+获取端口 ID（serial, idVendor, idProduct）
+```bash
+udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
+```
+将 /dev/ttyACM0 替换为实际设备名。
+## 3. 运行 (Run)
 
 ### 主程序
 
-**当前标准步兵自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑：
+**当前标准步兵自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑,需要注意的是.yaml文件众多，但是不一定都是对的，需要自己辨别，一般来说，standard.yaml是正常的可以直接使用：
 
 ```bash
-./build/standard_mpc_se configs/standard3.yaml
+./build/standard_mpc_se configs/standard.yaml
 ```
-
-> 配置文件按机器人选择，`standard3.yaml` / `standard4.yaml` 等对应不同机器人。
-
-#### 可选识别模型：RP24-DetectionModel
-
-本仓库已支持将 `RobotDetectionModel`（RP24）作为可选识别模型接入。
-
-1. 将导出的模型放到仓库 `assets/`（示例：`assets/rp24_0526.onnx`）。  
-2. 在 yaml 中增加模型路径并切换模型名：
-
-```yaml
-yolo_name: rp24
-rp24_model_path: assets/rp24_0526.onnx
-```
-
-3. 运行方式不变，例如：
-
-```bash
-./build/standard_mpc_se configs/standard4.yaml
-```
-
-> 说明：`rp24` 复用了当前 YOLOv5 的关键点解码流程，适用于输出格式为“8关键点 + 置信度 + 颜色分类 + 数字分类”的模型。
+ 提醒：
+ 1. 模型目前yolov5实测效果最好，推理速度一般在10ms左右，精度较好，建议低曝光，高增益，需要注意，曝光可能需要根据环境照度值去调整，过高过低都会导致识别效果变差。识别是最重要的一环！！！
 
 ---
+
 
 ### 单元测试
 
 #### 相机测试
 验证相机是否能正常出图：
 ```bash
-./build/camera_test --config-path=configs/sentry_blue.yaml --display
+./build/camera_test --config-path=configs/standard.yaml --display
 ```
 
 #### 通信测试
 验证与 C 板通讯（打印欧拉角 + 弹速）：
 ```bash
-./build/cboard_test configs/standard3.yaml
+./build/cboard_test 
 ```
 
 #### 自瞄离线录像测试
@@ -78,24 +79,21 @@ rp24_model_path: assets/rp24_0526.onnx
 #### MindVision 工业相机识别测试（`camera_detect_test`）
 使用 MindVision 工业相机实时采图并运行识别（包含 Detector 与 YOLO）：
 ```bash
-./build/camera_detect_test configs/right.yaml
-# 显示识别画面（需要有显示器）（哨兵）
-./build/camera_detect_test configs/right.yaml --display
-./build/camera_detect_test configs/standard3.yaml --display  
-```
-> 可加 `--tradition=true` 切换为传统识别方法。
+./build/camera_detect_test configs/standard.yaml
 
+> 可加 `--tradition=true` 切换为传统识别方法。
+```
 #### 离线视频识别测试（`detector_video_test`）
 读取本地 `.avi` 视频文件，逐帧运行识别，**无需相机**，适合调参和验证模型：
 ```bash
-./build/detector_video_test --config-path=configs/sentry_blue.yaml <视频路径>
+./build/detector_video_test --config-path=configs/standard.yaml <视频路径>
 ```
 > 可通过 `--start-index` / `--end-index` 指定视频起止帧。
 
 #### USB 摄像头识别测试（`usbcamera_detect_test`）
 使用 USB 摄像头实时采图并运行 YOLO 识别，需使用含 `image_width` / `usb_exposure` 等 USB 相机字段的 yaml（如 `uav.yaml`）：
 ```bash
-./build/usbcamera_detect_test configs/uav.yaml --name=video0 --display
+./build/usbcamera_detect_test configs/standard.yaml --name=video0 --display
 ```
 > `--name` 指定设备名，默认 `video0`。**不可使用 MindVision 相机的 yaml（如 `sentry_blue.yaml`）**，否则会报 `image_width not found`。
 
@@ -107,7 +105,7 @@ rp24_model_path: assets/rp24_0526.onnx
 使用 MindVision 相机实时采图，运行完整的 YOLO → Tracker → Aimer 链路，**不需要 CBoard 或串口**。
 IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yaml 中读取 `bullet_speed` 字段。
 ```bash
-./build/camera_track_test configs/sentry_blue.yaml
+./build/camera_track_test configs/standard.yaml
 ```
 - 窗口显示追踪重投影（黄色框）
 - 终端打印追踪状态、瞄准角度、是否触发射击
@@ -123,13 +121,13 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 适合单独调试打符链路（`Detector -> Solver -> Target -> Aimer`）：
 
 ```bash
-./build/auto_buff_debug configs/standard3.yaml
+./build/auto_buff_debug configs/standard.yaml
 ```
 
 若需要 MPC 版本调试：
 
 ```bash
-./build/auto_buff_debug_mpc configs/standard3.yaml
+./build/auto_buff_debug_mpc configs/standard.yaml
 ```
 
 > `auto_buff_debug` 源码当前默认是小符目标（`SmallTarget`）。如需固定调大符，可切换为 `BigTarget` 分支后重新编译。
@@ -142,7 +140,11 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 - `big_buff`：大符
 
 ```bash
-./build/mt_standard configs/standard3.yaml
+./build/mt_standard configs/standard.yaml
+```
+#### 云台响应测试（无需相机/下位机），发送步兵云台信号，观察响应曲线，修改mode即可改变相应轨迹：
+```
+./build/gimbal_response_test configs/standard.yaml --signal-mode=step --axis yaw
 ```
 
 #### 离线录像打符测试（无需相机/下位机）
@@ -167,7 +169,7 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 
 本项目使用 `watchdog.sh` 作为守护进程，由 systemd 服务在开机时拉起。
 
-### 步骤 1：确保脚本有执行权限
+### 步骤 1：确保脚本有执行权限（注意路径要修改为实际路径）
 
 ```bash
 chmod +x /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
@@ -179,60 +181,93 @@ chmod +x /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
 
 ```bash
 BIN_PATH="./build/standard_mpc_se"       # 运行的可执行文件
-CONFIG_PATH="configs/standard3.yaml"      # 配置文件路径
+CONFIG_PATH="configs/standard.yaml"      # 配置文件路径
 ```
 
 ROS 2 环境变量（如需要）已在脚本开头自动 source：
 ```bash
-if [ -f /opt/ros/jazzy/setup.bash ]; then
-    source /opt/ros/jazzy/setup.bash
+if [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
 fi
 ```
 > 如使用其他 ROS 版本，修改路径即可。
 
-### 步骤 3：重载并启动 systemd 服务
+### 步骤 3：创建 systemd 服务文件
 
-修改过 `watchdog.sh` 或服务文件后，需要重载：
+在系统中创建一个 systemd unit，用于在开机时启动 `watchdog.sh` 并由 systemd 管理其重启与日志。
+
+1. 使用编辑器创建服务文件：
 
 ```bash
+sudo nano /etc/systemd/system/Sc_vision.service
+```
+
+2. 将下面内容粘贴进去并保存（根据你的路径修改 `User`、`WorkingDirectory`、`ExecStart`）：
+
+```ini
+[Unit]
+Description=Sc_vision Auto Aim Watchdog
+After=network.target
+
+[Service]
+Type=simple
+User=setsuna
+WorkingDirectory=/home/setsuna/RM/AutoAim/Sc_vision
+ExecStart=/bin/bash /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
+Restart=always
+RestartSec=5
+Environment=HOME=/home/setsuna
+# 可选：从 /etc/default/Sc_vision.env 加载环境变量（如 LD_LIBRARY_PATH）
+EnvironmentFile=-/etc/default/Sc_vision.env
+
+[Install]
+WantedBy=multi-user.target
+```
+
+说明：
+- `Type=simple` 假定 `watchdog.sh` 在前台运行并不 fork；如果脚本会后台 fork，请改为 `Type=forking` 并使用 `PIDFile=`。
+- `EnvironmentFile` 前的 `-` 表示文件不存在时忽略（方便可选配置）。
+
+3. 重载 systemd 配置并启动服务：
+
+```bash
+# 重载 systemd 配置
 sudo systemctl daemon-reload
-sudo systemctl restart sp_vision.service
+# 启动并设置开机自启
+sudo systemctl enable --now Sc_vision.service
 ```
 
-验证运行状态：
+4. 查看服务状态与日志：
+
 ```bash
-sudo systemctl status sp_vision.service
+# 查看服务状态
+sudo systemctl status Sc_vision.service
+# 实时查看日志输出
+sudo journalctl -u Sc_vision.service -f
 ```
 
-### 步骤 4：查看实时日志
+5. 停止或重启服务：
 
 ```bash
-journalctl -u sp_vision.service -f
+# 停止服务
+sudo systemctl stop Sc_vision.service
+# 重启服务
+sudo systemctl restart Sc_vision.service
 ```
 
-### 步骤 5：停止自启程序
+如果你需要直接杀掉进程作为最后手段：
 
 ```bash
-sudo systemctl stop sp_vision.service
-# 或直接杀进程
 pkill -f watchdog.sh
 pkill -f standard_mpc_se
 ```
 
 ---
 
-## 修改代码后重新编译
-
-```bash
-cmake --build build --target standard_mpc_se -j$(nproc)
-```
-
-然后重启服务使其生效：
-```bash
-sudo systemctl restart sp_vision.service
-```
 
 ## Impovements in progress
-- 动态调整ROI大小以适应目标距离变化（较重要）
-- 引入自适应增益以提升不同速度下的跟随性能
-- 
+- 高优先级：
+  1. 添加自适应击打角度调整：根据目标运动角速度动态调整击打角度，提高命中率。
+  2. 测试推理池化和推理慢帧丢弃策略的性能
+- 中优先级：
+  1. 自适应kalman滤波器：根据目标运动状态动态调整过程噪声协方差，提高追踪稳定性。

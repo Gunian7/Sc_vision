@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-
+project(io)
 find_package(yaml-cpp REQUIRED)
 find_package(serial_driver REQUIRED)
 

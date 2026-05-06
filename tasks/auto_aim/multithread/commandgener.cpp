@@ -10,7 +10,7 @@ namespace multithread
 CommandGener::CommandGener(
   auto_aim::Shooter & shooter, auto_aim::Aimer & aimer, io::CBoard & cboard,
   tools::Plotter & plotter, bool debug)
-: shooter_(shooter), aimer_(aimer), cboard_(cboard), plotter_(plotter), stop_(false), debug_(debug)
+: cboard_(cboard), shooter_(shooter), aimer_(aimer), plotter_(plotter), stop_(false), debug_(debug)
 {
   thread_ = std::thread(&CommandGener::generate_command, this);
 }

@@ -2,7 +2,10 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <algorithm>
+#include <cmath>
 #include <tuple>
+#include <vector>
 
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
@@ -16,7 +19,16 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   state_{"lost"},
   pre_state_{"lost"},
   last_timestamp_(std::chrono::steady_clock::now()),
-  omni_target_priority_{ArmorPriority::fifth}
+  omni_target_priority_{ArmorPriority::fifth},
+  imm_enabled_(true),
+  motion_state_enabled_(true),
+  motion_w_low_(1.2),
+  motion_w_high_(6.0),
+  motion_dw_high_(8.0),
+  imm_initialized_(false),
+  imm_last_w_(0.0),
+  imm_dw_lpf_(0.0),
+  imm_last_t_(std::chrono::steady_clock::now())
 {
   auto yaml = YAML::LoadFile(config_path);
   enemy_color_ = (yaml["enemy_color"].as<std::string>() == "red") ? Color::red : Color::blue;
@@ -25,14 +37,10 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   outpost_max_temp_lost_count_ = yaml["outpost_max_temp_lost_count"].as<int>();
   normal_temp_lost_count_ = max_temp_lost_count_;
   jump_z_threshold_ = 0.02;
+  jump_yaw_threshold_rad_ = 40.0 / 57.3;
   jump_confirm_count_ = 2;
   jump_avg_alpha_ = 1.0;
   jump_fire_cooldown_ = 0.0;
-  jump_fire_cooldown_min_ = 0.0;
-  jump_fire_cooldown_max_ = 0.0;
-  jump_fire_cooldown_speed_start_ = 0.0;
-  jump_fire_cooldown_speed_end_ = 0.0;
-  jump_fire_cooldown_dynamic_ = false;
   outpost_jump_fire_cooldown_ = 0.0;
   jump_min_interval_ = 0.0;
   process_noise_linear_normal_ = 100.0;
@@ -44,6 +52,9 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["jump_z_threshold"].IsDefined()) {
     jump_z_threshold_ = yaml["jump_z_threshold"].as<double>();
   }
+  if (yaml["jump_yaw_threshold_deg"].IsDefined()) {
+    jump_yaw_threshold_rad_ = yaml["jump_yaw_threshold_deg"].as<double>() / 57.3;
+  }
   if (yaml["jump_confirm_count"].IsDefined()) {
     jump_confirm_count_ = yaml["jump_confirm_count"].as<int>();
   }
@@ -52,22 +63,6 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
   if (yaml["jump_fire_cooldown"].IsDefined()) {
     jump_fire_cooldown_ = yaml["jump_fire_cooldown"].as<double>();
-  }
-  if (yaml["jump_fire_cooldown_min"].IsDefined()) {
-    jump_fire_cooldown_min_ = yaml["jump_fire_cooldown_min"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_max"].IsDefined()) {
-    jump_fire_cooldown_max_ = yaml["jump_fire_cooldown_max"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_speed_start"].IsDefined()) {
-    jump_fire_cooldown_speed_start_ = yaml["jump_fire_cooldown_speed_start"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
-  }
-  if (yaml["jump_fire_cooldown_speed_end"].IsDefined()) {
-    jump_fire_cooldown_speed_end_ = yaml["jump_fire_cooldown_speed_end"].as<double>();
-    jump_fire_cooldown_dynamic_ = true;
   }
   if (yaml["outpost_jump_fire_cooldown"].IsDefined()) {
     outpost_jump_fire_cooldown_ = yaml["outpost_jump_fire_cooldown"].as<double>();
@@ -101,6 +96,72 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["forced_target_angular_velocity"].IsDefined()) {
     forced_target_angular_velocity_ = yaml["forced_target_angular_velocity"].as<double>();
   }
+  if (yaml["motion_state_enable"].IsDefined()) {
+    motion_state_enabled_ = yaml["motion_state_enable"].as<bool>();
+  }
+  if (yaml["enable_imm"].IsDefined()) {
+    imm_enabled_ = yaml["enable_imm"].as<bool>();
+  }
+  if (yaml["motion_w_low"].IsDefined()) {
+    motion_w_low_ = yaml["motion_w_low"].as<double>();
+  }
+  if (yaml["motion_w_high"].IsDefined()) {
+    motion_w_high_ = yaml["motion_w_high"].as<double>();
+  }
+  if (yaml["motion_dw_high"].IsDefined()) {
+    motion_dw_high_ = yaml["motion_dw_high"].as<double>();
+  }
+  SpinIMM::Params imm_params;
+  imm_params.transition << 0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90;
+  imm_params.r_yaw = 2e-3;
+  imm_params.q_slow << 1e-4, 8e-2, 1e-1;
+  imm_params.q_constant << 1e-4, 2e-2, 5e-2;
+  imm_params.q_variable << 2e-4, 2e-1, 8e-1;
+  imm_params.alpha_decay_slow = 0.2;
+  imm_params.alpha_decay_constant = 0.5;
+  imm_params.dt_min = 1e-3;
+  imm_params.dt_max = 0.2;
+
+  if (yaml["imm_transition"].IsDefined()) {
+    const auto values = yaml["imm_transition"].as<std::vector<double>>();
+    if (values.size() == 9) {
+      imm_params.transition << values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8];
+    }
+  }
+  if (yaml["imm_r_yaw"].IsDefined()) {
+    imm_params.r_yaw = std::max(1e-9, yaml["imm_r_yaw"].as<double>());
+  }
+  if (yaml["imm_q_slow"].IsDefined()) {
+    const auto values = yaml["imm_q_slow"].as<std::vector<double>>();
+    if (values.size() == 3) {
+      imm_params.q_slow << values[0], values[1], values[2];
+    }
+  }
+  if (yaml["imm_q_constant"].IsDefined()) {
+    const auto values = yaml["imm_q_constant"].as<std::vector<double>>();
+    if (values.size() == 3) {
+      imm_params.q_constant << values[0], values[1], values[2];
+    }
+  }
+  if (yaml["imm_q_variable"].IsDefined()) {
+    const auto values = yaml["imm_q_variable"].as<std::vector<double>>();
+    if (values.size() == 3) {
+      imm_params.q_variable << values[0], values[1], values[2];
+    }
+  }
+  if (yaml["imm_alpha_decay_slow"].IsDefined()) {
+    imm_params.alpha_decay_slow = std::clamp(yaml["imm_alpha_decay_slow"].as<double>(), 0.0, 1.0);
+  }
+  if (yaml["imm_alpha_decay_constant"].IsDefined()) {
+    imm_params.alpha_decay_constant = std::clamp(yaml["imm_alpha_decay_constant"].as<double>(), 0.0, 1.0);
+  }
+  if (yaml["imm_dt_min"].IsDefined()) {
+    imm_params.dt_min = std::max(1e-6, yaml["imm_dt_min"].as<double>());
+  }
+  if (yaml["imm_dt_max"].IsDefined()) {
+    imm_params.dt_max = std::max(imm_params.dt_min, yaml["imm_dt_max"].as<double>());
+  }
+  spin_imm_.set_params(imm_params);
 
   if (force_target_angular_velocity_) {
     tools::logger()->warn(
@@ -351,7 +412,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
-  target_.set_jump_params(jump_z_threshold_, jump_confirm_count_);
+  target_.set_jump_params(jump_z_threshold_, jump_yaw_threshold_rad_, jump_confirm_count_);
   target_.set_jump_avg_alpha(jump_avg_alpha_);
   target_.set_process_noise(
     process_noise_linear_normal_, process_noise_angular_normal_, process_noise_linear_outpost_,
@@ -359,10 +420,6 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   target_.set_measurement_noise(measurement_noise_yaw_, measurement_noise_pitch_);
   if (armor.name == ArmorName::outpost && outpost_jump_fire_cooldown_ > 0.0) {
     target_.set_jump_fire_cooldown(outpost_jump_fire_cooldown_);
-  } else if (jump_fire_cooldown_dynamic_) {
-    target_.set_jump_fire_cooldown_params(
-      jump_fire_cooldown_min_, jump_fire_cooldown_max_, jump_fire_cooldown_speed_start_,
-      jump_fire_cooldown_speed_end_);
   } else {
     target_.set_jump_fire_cooldown(jump_fire_cooldown_);
   }
@@ -370,6 +427,8 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   if (force_target_angular_velocity_) {
     target_.set_angular_velocity(forced_target_angular_velocity_);
   }
+  imm_initialized_ = false;
+  update_motion_state(target_, t);
 
   return true;
 }
@@ -386,10 +445,71 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
 
     solver_.solve(armor);
     target_.update(armor);
+    update_motion_state(target_, t);
     return true;
   }
 
+  update_motion_state(target_, t);
+
   return false;
+}
+
+void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::time_point t)
+{
+  if (!motion_state_enabled_) {
+    target.set_motion_state(MotionState::static_state);
+    target.set_imm_output(target.ekf_x()[7], 0.0);
+    return;
+  }
+
+  auto ekf_x = target.ekf_x();
+
+  double dt = 0.01;
+  if (imm_initialized_) {
+    dt = tools::delta_time(t, imm_last_t_);
+  }
+
+  double w = ekf_x[7];
+  double alpha = 0.0;
+  if (imm_enabled_) {
+    const double yaw_measure = ekf_x[6];
+    if (!imm_initialized_) {
+      spin_imm_.reset(yaw_measure, ekf_x[7], 0.0);
+      imm_last_w_ = ekf_x[7];
+      imm_dw_lpf_ = 0.0;
+      imm_initialized_ = true;
+    }
+
+    auto imm = spin_imm_.update(yaw_measure, dt);
+    w = imm.w;
+    alpha = imm.alpha;
+  } else if (!imm_initialized_) {
+    imm_last_w_ = w;
+    imm_dw_lpf_ = 0.0;
+    imm_initialized_ = true;
+  }
+
+  const double dw_raw = (w - imm_last_w_) / std::max(dt, 1e-3);
+  imm_dw_lpf_ = 0.7 * imm_dw_lpf_ + 0.3 * dw_raw;
+  imm_last_w_ = w;
+  imm_last_t_ = t;
+
+  const double abs_w = std::abs(w);
+  const double abs_dw = std::abs(imm_dw_lpf_);
+
+  MotionState state = MotionState::static_state;
+  if (abs_w < motion_w_low_) {
+    state = MotionState::static_state;
+  } else if (abs_dw >= motion_dw_high_) {
+    state = MotionState::spin_variable;
+  } else if (abs_w < motion_w_high_) {
+    state = MotionState::spin_slow_inplace;
+  } else {
+    state = MotionState::spin_fast_inplace;
+  }
+
+  target.set_motion_state(state);
+  target.set_imm_output(w, alpha);
 }
 
 }  // namespace auto_aim

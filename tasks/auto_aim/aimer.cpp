@@ -12,7 +12,11 @@
 namespace auto_aim
 {
 Aimer::Aimer(const std::string & config_path)
-: left_yaw_offset_(std::nullopt), right_yaw_offset_(std::nullopt)
+: left_yaw_offset_(std::nullopt),
+  right_yaw_offset_(std::nullopt),
+  fsm_enable_(true),
+  fsm_controller_(),
+  fsm_state_(AutoAimFsm::AIM_SINGLE_ARMOR)
 {
   auto yaml = YAML::LoadFile(config_path);
   yaw_offset_ = yaml["yaw_offset"].as<double>() / 57.3;        // degree to rad
@@ -28,6 +32,10 @@ Aimer::Aimer(const std::string & config_path)
   high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
   low_speed_delay_time_ = yaml["low_speed_delay_time"].as<double>();
   decision_speed_ = yaml["decision_speed"].as<double>();
+  use_center_aim_when_high_speed_ = true;
+  if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
+    use_center_aim_when_high_speed_ = yaml["use_center_aim_when_high_speed"].as<bool>();
+  }
   speed_angle_ = decision_speed_;
   speed_angle_max_ = speed_angle_;
   if (yaml["comming_angle_high"].IsDefined()) {
@@ -56,26 +64,18 @@ Aimer::Aimer(const std::string & config_path)
   } else {
     speed_angle_max_ = speed_angle_;
   }
-  jump_pitch_up_ = 0.0;
-  jump_pitch_down_ = 0.0;
-  jump_pitch_up_duration_ = 0.0;
-  jump_pitch_down_duration_ = 0.0;
-  if (yaml["jump_pitch_up"].IsDefined()) {
-    jump_pitch_up_ = yaml["jump_pitch_up"].as<double>() / 57.3;
-  }
-  if (yaml["jump_pitch_down"].IsDefined()) {
-    jump_pitch_down_ = yaml["jump_pitch_down"].as<double>() / 57.3;
-  }
-  if (yaml["jump_pitch_up_duration"].IsDefined()) {
-    jump_pitch_up_duration_ = yaml["jump_pitch_up_duration"].as<double>();
-  }
-  if (yaml["jump_pitch_down_duration"].IsDefined()) {
-    jump_pitch_down_duration_ = yaml["jump_pitch_down_duration"].as<double>();
-  }
   if (yaml["left_yaw_offset"].IsDefined() && yaml["right_yaw_offset"].IsDefined()) {
     left_yaw_offset_ = yaml["left_yaw_offset"].as<double>() / 57.3;    // degree to rad
     right_yaw_offset_ = yaml["right_yaw_offset"].as<double>() / 57.3;  // degree to rad
     tools::logger()->info("[Aimer] successfully loading shootmode");
+  }
+
+  if (yaml["auto_aim_fsm"].IsDefined()) {
+    const auto fsm_yaml = yaml["auto_aim_fsm"];
+    if (fsm_yaml["enable"].IsDefined()) {
+      fsm_enable_ = fsm_yaml["enable"].as<bool>();
+    }
+    fsm_controller_ = AutoAimFsmController(fsm_yaml);
   }
 }
 
@@ -134,6 +134,7 @@ io::Command Aimer::aim(
   double prev_fly_time = trajectory0.fly_time;
   tools::Trajectory current_traj = trajectory0;
   std::vector<Target> iteration_target(10, target);  // 创建10个目标副本用于迭代预测
+  Target final_target = target;
 
   for (int iter = 0; iter < 10; ++iter) {
     // 预测目标在 future + prev_fly_time 时刻的位置
@@ -143,6 +144,7 @@ io::Command Aimer::aim(
     // 计算瞄准点
     auto aim_point = choose_aim_point(iteration_target[iter]);
     debug_aim_point = aim_point;
+    final_target = iteration_target[iter];
     if (!aim_point.valid) {
       return {false, false, 0, 0, 0, 0, 0, 0};
     }
@@ -169,22 +171,19 @@ io::Command Aimer::aim(
     prev_fly_time = current_traj.fly_time;
   }
 
-  // 计算最终角度
-  Eigen::Vector3d final_xyz = debug_aim_point.xyza.head(3);
-  double yaw = std::atan2(final_xyz.y(), final_xyz.x()) + yaw_offset_;
-  double jump_correction = 0.0;
-  if (target.has_jump_time() && std::abs(target.ekf_x()[7]) >= decision_speed_) {
-    auto age = std::chrono::duration<double>(timestamp - target.last_jump_time()).count();
-    auto dir = target.last_jump_dir();
-    if (dir < 0 && jump_pitch_up_duration_ > 0.0 && age >= 0.0 && age <= jump_pitch_up_duration_) {
-      jump_correction = jump_pitch_up_;
-    }
-    if (dir > 0 && jump_pitch_down_duration_ > 0.0 && age >= 0.0 && age <= jump_pitch_down_duration_) {
-      jump_correction = -jump_pitch_down_;
-    }
+  // 计算最终角度：yaw可选车心，pitch始终来自装甲板弹道
+  Eigen::Vector3d armor_xyz_for_pitch = debug_aim_point.xyza.head(3);
+  auto final_ekf_x = final_target.ekf_x();
+  const bool center_mode = fsm_enable_
+                             ? (fsm_state_ == AutoAimFsm::AIM_WHOLE_CAR_CENTER)
+                             : (std::abs(final_ekf_x[7]) > decision_speed_);
+  double yaw;
+  if (use_center_aim_when_high_speed_ && center_mode) {
+    yaw = std::atan2(final_ekf_x[2], final_ekf_x[0]) + yaw_offset_;
+  } else {
+    yaw = std::atan2(armor_xyz_for_pitch.y(), armor_xyz_for_pitch.x()) + yaw_offset_;
   }
-
-  double pitch = -(current_traj.pitch + pitch_offset_ + jump_correction);
+  double pitch = -(current_traj.pitch + pitch_offset_);
   return {true, false, yaw, pitch, 0, 0, 0, 0};
 }
 
@@ -212,6 +211,18 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   Eigen::VectorXd ekf_x = target.ekf_x();
   std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
   auto armor_num = armor_xyza_list.size();
+  if (armor_num == 0) {
+    return {false, Eigen::Vector4d::Zero()};
+  }
+
+  const double spin_w = (std::abs(target.imm_w()) > 1e-6) ? target.imm_w() : ekf_x[7];
+  if (fsm_enable_) {
+    fsm_controller_.update(spin_w, target.jumped);
+    fsm_state_ = fsm_controller_.state();
+  } else {
+    fsm_state_ = AutoAimFsm::AIM_SINGLE_ARMOR;
+  }
+
   // 如果装甲板未发生过跳变，则只有当前装甲板的位置已知
   if (!target.jumped) return {true, armor_xyza_list[0]};
 
@@ -220,18 +231,88 @@ AimPoint Aimer::choose_aim_point(const Target & target)
 
   // 如果delta_angle为0，则该装甲板中心和整车中心的连线在世界坐标系的xy平面过原点
   std::vector<double> delta_angle_list;
-  for (int i = 0; i < armor_num; i++) {
+  for (std::size_t i = 0; i < armor_num; i++) {
     auto delta_angle = tools::limit_rad(armor_xyza_list[i][3] - center_yaw);
     delta_angle_list.emplace_back(delta_angle);
   }
 
-  // 不考虑小陀螺
-  if (std::abs(target.ekf_x()[8]) <= 2 && target.name != ArmorName::outpost) {
+  auto pick_best_by_min_delta = [&](const std::vector<int> & id_list) -> int {
+    int best_id = -1;
+    double best_abs_delta = std::numeric_limits<double>::max();
+    for (int id : id_list) {
+      if (id < 0 || id >= static_cast<int>(armor_num)) {
+        continue;
+      }
+      const auto abs_delta = std::abs(delta_angle_list[id]);
+      if (abs_delta < best_abs_delta) {
+        best_abs_delta = abs_delta;
+        best_id = id;
+      }
+    }
+    return best_id;
+  };
+
+  if (!fsm_enable_) {
+    if (std::abs(target.ekf_x()[8]) <= 2 && target.name != ArmorName::outpost) {
+      std::vector<int> id_list;
+      for (std::size_t i = 0; i < armor_num; i++) {
+        if (std::abs(delta_angle_list[i]) > 60 / 57.3) continue;
+        id_list.push_back(static_cast<int>(i));
+      }
+
+      if (id_list.empty()) {
+        tools::logger()->warn("Empty id list!");
+        return {false, armor_xyza_list[0]};
+      }
+
+      if (id_list.size() > 1) {
+        int id0 = id_list[0], id1 = id_list[1];
+
+        if (lock_id_ != id0 && lock_id_ != id1)
+          lock_id_ = (std::abs(delta_angle_list[id0]) < std::abs(delta_angle_list[id1])) ? id0 : id1;
+
+        return {true, armor_xyza_list[lock_id_]};
+      }
+
+      lock_id_ = -1;
+      return {true, armor_xyza_list[id_list[0]]};
+    }
+
+    double coming_angle, leaving_angle;
+    if (target.name == ArmorName::outpost) {
+      coming_angle = outpost_comming_angle_;
+      leaving_angle = outpost_leaving_angle_;
+    } else {
+      const double abs_w = std::abs(ekf_x[7]);
+      if (abs_w < speed_angle_) {
+        coming_angle = comming_angle_;
+        leaving_angle = leaving_angle_;
+      } else if (abs_w >= speed_angle_max_) {
+        coming_angle = comming_end_angle_;
+        leaving_angle = leaving_end_angle_;
+      } else {
+        const double denom = speed_angle_max_ - speed_angle_;
+        const double t = denom > 1e-6 ? (abs_w - speed_angle_) / denom : 1.0;
+        coming_angle = comming_angle_high_ + t * (comming_end_angle_ - comming_angle_high_);
+        leaving_angle = leaving_angle_high_ + t * (leaving_end_angle_ - leaving_angle_high_);
+      }
+    }
+
+    for (std::size_t i = 0; i < armor_num; i++) {
+      if (std::abs(delta_angle_list[i]) > coming_angle) continue;
+      if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
+      if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+    }
+
+    return {false, armor_xyza_list[0]};
+  }
+
+  if (fsm_state_ == AutoAimFsm::AIM_SINGLE_ARMOR && target.name != ArmorName::outpost) {
     // 选择在可射击范围内的装甲板
     std::vector<int> id_list;
-    for (int i = 0; i < armor_num; i++) {
+    for (std::size_t i = 0; i < armor_num; i++) {
       if (std::abs(delta_angle_list[i]) > 60 / 57.3) continue;
-      id_list.push_back(i);
+      id_list.push_back(static_cast<int>(i));
     }
     // 绝无可能
     if (id_list.empty()) {
@@ -255,6 +336,35 @@ AimPoint Aimer::choose_aim_point(const Target & target)
     return {true, armor_xyza_list[id_list[0]]};
   }
 
+  lock_id_ = -1;
+
+  if (fsm_state_ == AutoAimFsm::AIM_WHOLE_CAR_PAIR && target.name != ArmorName::outpost) {
+    std::vector<int> pair_ids;
+    if (armor_num >= 4) {
+      if (ekf_x[10] > 0) {
+        pair_ids = {1, 3};
+      } else {
+        pair_ids = {0, 2};
+      }
+      int selected_id = pick_best_by_min_delta(pair_ids);
+      if (selected_id >= 0) {
+        return {true, armor_xyza_list[selected_id]};
+      }
+    }
+  }
+
+  if (fsm_state_ == AutoAimFsm::AIM_WHOLE_CAR_CENTER) {
+    std::vector<int> all_ids;
+    all_ids.reserve(armor_num);
+    for (std::size_t i = 0; i < armor_num; ++i) {
+      all_ids.push_back(static_cast<int>(i));
+    }
+    int selected_id = pick_best_by_min_delta(all_ids);
+    if (selected_id >= 0) {
+      return {true, armor_xyza_list[selected_id]};
+    }
+  }
+
   double coming_angle, leaving_angle;
   if (target.name == ArmorName::outpost) {
     coming_angle = outpost_comming_angle_;
@@ -276,12 +386,21 @@ AimPoint Aimer::choose_aim_point(const Target & target)
   }
 
   // 在小陀螺时，一侧的装甲板不断出现，另一侧的装甲板不断消失，显然前者被打中的概率更高
-  for (int i = 0; i < armor_num; i++) {
+  for (std::size_t i = 0; i < armor_num; i++) {
     if (std::abs(delta_angle_list[i]) > coming_angle) continue;
     if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
     if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
   }
 
+  std::vector<int> all_ids;
+  all_ids.reserve(armor_num);
+  for (std::size_t i = 0; i < armor_num; ++i) {
+    all_ids.push_back(static_cast<int>(i));
+  }
+  int selected_id = pick_best_by_min_delta(all_ids);
+  if (selected_id >= 0) {
+    return {true, armor_xyza_list[selected_id]};
+  }
   return {false, armor_xyza_list[0]};
 }
 

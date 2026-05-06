@@ -16,7 +16,7 @@ MindVision::MindVision(double exposure_ms, double gamma, const std::string & vid
   handle_(-1),
   quit_(false),
   ok_(false),
-  queue_(1),
+  queue_(3),
   vid_(-1),
   pid_(-1)
 {
@@ -81,7 +81,7 @@ void MindVision::open()
   CameraSetGamma(handle_, gamma_ * 1e2);                   // 设置伽马
   CameraSetIspOutFormat(handle_, CAMERA_MEDIA_TYPE_BGR8);  // 设置输出格式为BGR
   CameraSetTriggerMode(handle_, 0);                        // 设置为连续采集模式
-  CameraSetFrameSpeed(handle_, 1);                         // 设置为低帧率模式
+  CameraSetFrameSpeed(handle_, 2);                         // 设置为低帧率模式
 
   CameraPlay(handle_);
 
@@ -92,7 +92,7 @@ void MindVision::open()
 
     ok_ = true;
     while (!quit_) {
-      std::this_thread::sleep_for(1ms);
+      std::this_thread::sleep_for(0.1ms);
 
       auto img = cv::Mat(height_, width_, CV_8UC3);
 

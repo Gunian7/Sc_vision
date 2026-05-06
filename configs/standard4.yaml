@@ -23,7 +23,7 @@ roi:
 use_roi: true
 
 dynamic_roi: true
-dynamic_roi_shrink_frames: 100
+dynamic_roi_shrink_frames: 50
 dynamic_roi_lost_frames: 5
 
 #####-----传统方法参数-----#####
@@ -45,20 +45,27 @@ outpost_leaving_angle: 30 # degree 前哨站离开视野角度
 outpost_max_temp_lost_count: 75
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
-jump_z_threshold: 0.03 # m
+jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_z_threshold: 0.03 # m 前哨站仍按z跳变判定
 jump_confirm_count: 3
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
-jump_fire_cooldown: 0.05 # s 固定延时(不使用动态参数时生效)
-jump_fire_cooldown_min: 0.05 # s 低速跳变发弹延时
-jump_fire_cooldown_max: 0.20 # s 高速跳变发弹延时
-outpost_jump_fire_cooldown: 0.08 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
-jump_fire_cooldown_speed_start: 3.0 # rad/s 低速起点
-jump_fire_cooldown_speed_end: 10.0 # rad/s 高速终点
-jump_pitch_up: 0.3 # degree  装甲板跳变修正量
-jump_pitch_down: 1.5 # degree
-jump_pitch_up_duration: 0.15 # s
-jump_pitch_down_duration: 0.25 # s
-jump_min_interval: 0.1 # s 跳变最小间隔
+jump_fire_cooldown: 0.0 # s 固定延时(不使用动态参数时生效)
+outpost_jump_fire_cooldown: 0.02 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
+jump_min_interval: 0.01 # s 跳变最小间隔
+motion_state_enable: true
+enable_imm: true
+motion_w_low: 1.2 # rad/s
+motion_w_high: 6.0 # rad/s
+motion_dw_high: 8.0 # rad/s^2
+imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3
+imm_r_yaw: 0.002
+imm_q_slow: [1e-4, 8e-2, 1e-1] # [yaw,w,alpha]
+imm_q_constant: [1e-4, 2e-2, 5e-2] # [yaw,w,alpha]
+imm_q_variable: [2e-4, 2e-1, 8e-1] # [yaw,w,alpha]
+imm_alpha_decay_slow: 0.2
+imm_alpha_decay_constant: 0.5
+imm_dt_min: 0.001
+imm_dt_max: 0.2
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 400.0  #400
@@ -70,8 +77,8 @@ target_measurement_noise_pitch: 0.002
 force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），
 forced_target_angular_velocity: 2.51 # rad/s
 #####-----aimer参数-----#####
-yaw_offset: 1.6   # degree 1.5
-pitch_offset: 7.3 # degree 2
+yaw_offset: 0.0   # degree 1.5
+pitch_offset: 0.0 # degree 2
 comming_angle: 65 # degree 55
 leaving_angle: 10 # degree 20
 comming_angle_high: 50 # degree 高速(角速度大)使用
@@ -142,7 +149,7 @@ imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
 use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
+use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 5.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
