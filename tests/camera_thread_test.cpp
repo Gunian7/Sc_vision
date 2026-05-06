@@ -1,6 +1,7 @@
 #include <fmt/core.h>
 #include <unistd.h>
 
+#include <Eigen/Geometry>
 #include <chrono>
 #include <map>
 #include <mutex>
@@ -106,7 +107,7 @@ int main(int argc, char * argv[])
         }
       }
       if (yolo) {
-        tools::Frame frame{frame_id, img.clone(), t};
+        tools::Frame frame{frame_id, img.clone(), t, Eigen::Quaterniond::Identity(), {}};
         detect_frame(std::move(frame), *yolo);
 
         yolo_used[yolo_id] = false;

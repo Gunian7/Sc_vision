@@ -16,6 +16,9 @@ struct DetectionResult
   double delta_yaw;    //rad
   double delta_pitch;  //rad
 
+  DetectionResult() = default;
+  DetectionResult(const DetectionResult &) = default;
+
   // Assignment operator
   DetectionResult & operator=(const DetectionResult & other)
   {

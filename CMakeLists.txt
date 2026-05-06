@@ -7,6 +7,8 @@ set(CMAKE_BUILD_TYPE Release)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
+  # 聚合体省略尾部 initializer 在工程中大量使用；-Wmissing-field-initializers 噪声远大于收益
+  add_compile_options(-Wno-missing-field-initializers)
 endif()
 add_link_options(-Wl,--no-as-needed)
 set(CMAKE_EXPORT_COMPILE_COMMANDS on)

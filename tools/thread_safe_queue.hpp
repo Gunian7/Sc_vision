@@ -59,7 +59,7 @@ public:
 
     T value = std::move(queue_.front());
     queue_.pop();
-    return std::move(value);
+    return value;
   }
 
   T front()

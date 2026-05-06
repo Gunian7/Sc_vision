@@ -63,12 +63,12 @@ int main(int argc, char * argv[])
 
   int count = 0;
 
-  io::Command init_command{1, 0, 0, 0};
+  io::Command init_command{true, false, 0., 0., 0., 0., 0., 0.};
   cboard.send(init_command);
   std::this_thread::sleep_for(5s);  //等待云台归零
 
-  io::Command command{0};
-  io::Command last_command{0};
+  io::Command command{};
+  io::Command last_command{};
 
   double t = 0;
   auto last_t = t;
@@ -89,7 +89,7 @@ int main(int argc, char * argv[])
     if (signal_mode == "triangle_wave") {
       if (count == slice) {
         cmd_angle = init_angle;
-        command = {1, 0, 0, 0};
+        command = {true, false, 0., 0., 0., 0., 0., 0.};
         if (axis_index == 0)
           command.yaw = cmd_angle / 57.3;
         else
@@ -128,7 +128,7 @@ int main(int argc, char * argv[])
         cmd_angle += delta_angle;
         count = 0;
       }
-      command = {1, 0, tools::limit_rad(cmd_angle / 57.3), 0};
+      command = {true, false, tools::limit_rad(cmd_angle / 57.3), 0., 0., 0., 0., 0.};
       count++;
 
       cboard.send(command);

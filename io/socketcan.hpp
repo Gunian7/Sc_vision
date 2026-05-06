@@ -24,7 +24,8 @@ namespace io
 class SocketCAN
 {
 public:
-  SocketCAN(const std::string & interface, std::function<void(const can_frame & frame)> rx_handler)
+  SocketCAN([[maybe_unused]] const std::string & interface,
+    std::function<void(const can_frame & frame)> rx_handler)
     : quit_(false), rx_handler_(std::move(rx_handler))
   {
     try_open();

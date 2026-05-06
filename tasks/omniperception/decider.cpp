@@ -58,14 +58,14 @@ io::Command Decider::decide(
 
     count_ = (count_ + 1) % 3;
 
-    return io::Command{
-      true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
-      tools::limit_rad(delta_angle[1] / 57.3)};
+    return io::tracking_command(
+      tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
+      tools::limit_rad(delta_angle[1] / 57.3));
   }
 
   count_ = (count_ + 1) % 3;
   // 如果没有找到目标，返回默认命令
-  return io::Command{false, false, 0, 0};
+  return io::neutral_command();
 }
 
 io::Command Decider::decide(
@@ -83,27 +83,27 @@ io::Command Decider::decide(
       "[back camera] delta yaw:{:.2f},target pitch:{:.2f},armor number:{},armor name:{}",
       delta_angle[0], delta_angle[1], armors.size(), auto_aim::ARMOR_NAMES[armors.front().name]);
 
-    return io::Command{
-      true, false, tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
-      tools::limit_rad(delta_angle[1] / 57.3)};
+    return io::tracking_command(
+      tools::limit_rad(gimbal_pos[0] + delta_angle[0] / 57.3),
+      tools::limit_rad(delta_angle[1] / 57.3));
   }
 
-  return io::Command{false, false, 0, 0};
+  return io::neutral_command();
 }
 
 io::Command Decider::decide(const std::vector<DetectionResult> & detection_queue)
 {
   if (detection_queue.empty()) {
-    return io::Command{false, false, 0, 0};
+    return io::neutral_command();
   }
 
-  DetectionResult dr = detection_queue.front();
-  if (dr.armors.empty()) return io::Command{false, false, 0, 0};
+  const DetectionResult & dr = detection_queue.front();
+  if (dr.armors.empty()) return io::neutral_command();
   tools::logger()->info(
     "omniperceptron find {},delta yaw is {:.4f}", auto_aim::ARMOR_NAMES[dr.armors.front().name],
     dr.delta_yaw * 57.3);
 
-  return io::Command{true, false, dr.delta_yaw, dr.delta_pitch};
+  return io::tracking_command(dr.delta_yaw, dr.delta_pitch);
 };
 
 Eigen::Vector2d Decider::delta_angle(

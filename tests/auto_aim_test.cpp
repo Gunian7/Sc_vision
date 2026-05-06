@@ -52,7 +52,7 @@ int main(int argc, char * argv[])
   auto t0 = std::chrono::steady_clock::now();
 
   auto_aim::Target last_target;
-  io::Command last_command;
+  io::Command last_command{};
   double last_t = -1;
 
   video.set(cv::CAP_PROP_POS_FRAMES, start_index);

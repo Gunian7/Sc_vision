@@ -10,6 +10,10 @@ using namespace std::chrono_literals;
 
 namespace auto_aim
 {
+namespace
+{
+constexpr Plan k_invalid_plan{false, false, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+}
 Planner::Planner(const std::string & config_path)
 {
   auto yaml = tools::load(config_path);
@@ -46,7 +50,7 @@ Plan Planner::plan(Target target, double bullet_speed)
     }
   }
   if (min_dist >= 1e9) {
-    return {false};
+    return k_invalid_plan;
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
   target.predict(bullet_traj.fly_time);
@@ -59,7 +63,7 @@ Plan Planner::plan(Target target, double bullet_speed)
     traj = get_trajectory(target, yaw0, bullet_speed);
   } catch (const std::exception & e) {
     tools::logger()->warn("Unsolvable target {:.2f}", bullet_speed);
-    return {false};
+    return k_invalid_plan;
   }
 
   // 3. Solve yaw
