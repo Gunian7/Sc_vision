@@ -5,7 +5,7 @@
 #include <chrono>
 #include <list>
 
-#include "io/cboard.hpp"
+#include "io/board_types.hpp"
 #include "io/command.hpp"
 #include "auto_aim_fsm.hpp"
 #include "target.hpp"

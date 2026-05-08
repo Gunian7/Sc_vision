@@ -9,6 +9,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "io/command.hpp"
+#include "io/mcu_mode.hpp"
 #include "io/socketcan.hpp"
 #include "tools/logger.hpp"
 #include "tools/thread_safe_queue.hpp"
@@ -16,9 +17,6 @@
 #include "io/serial_phoenix/include/serial.hpp"
 
 namespace io {
-enum Mode { idle, auto_aim, small_buff, big_buff, outpost };
-const std::vector<std::string> MODES = { "idle", "auto_aim", "small_buff", "big_buff", "outpost" };
-
 // 哨兵专有
 enum ShootMode { left_shoot, right_shoot, both_shoot };
 const std::vector<std::string> SHOOT_MODES = { "left_shoot", "right_shoot", "both_shoot" };
@@ -30,7 +28,7 @@ typedef struct Autoaim_s {
     float pitch;
     uint8_t enemy_team_color;
     uint8_t mode; 
-    //  mode: 0-idle, 1-auto_aim, 2-small_buff, 3-big_buff, 4-outpost
+    //  mode: 0-idle, 1-auto_aim, 2-small_buff, 3-big_buff, 4-outpost（解析后并入 auto_aim，见 mcu_mode.hpp）
     uint8_t rune_flag;
     float bullet_speed;
 } Autoaim;

@@ -77,7 +77,7 @@ int main(int argc, char * argv[])
     }
 
     /// 自瞄
-    if (mode == io::Mode::auto_aim || mode == io::Mode::outpost) {
+    if (mode == io::Mode::auto_aim) {
       solver.set_R_gimbal2world(q);
 
       Eigen::Vector3d ypr = tools::eulers(solver.R_gimbal2world(), 2, 1, 0);

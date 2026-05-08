@@ -1,7 +1,5 @@
 #include "cboard.hpp"
 
-#include "Eigen/src/Core/AssignEvaluator.h"
-
 #include <cstdint>
 #include <iostream>
 
@@ -67,25 +65,13 @@ void CBoard::start() {
     std::thread Link_thread([this] {
         while (true) {
             this->serial_.read(this->read_buffer_);
-            // std::cout << "Data received from serial port." << std::endl;
-            // for (auto it = this->read_buffer_.begin(); it != this->read_buffer_.end(); ++it) {
-            //     std::cout << std::hex << static_cast<int>(*it) << " ";
-            // }
-            // std::cout << std::dec;
-            // std::cout << std::endl;
-            // 解析数据
             uint8_t type = this->read_buffer_[1];
-            // std::cout << "a." << std::endl;
 
             std::vector<uint8_t> buffer(29);
 
             std::memcpy(buffer.data(), this->read_buffer_.data() + 2, 29);
             if (type == 0xb0) {
                 this->read_fun_1(*(Message_phoenix*)this->read_buffer_.data());
-                // std::cout << "Received IMU data." << std::endl;
-            } else {
-                // std::cout << "Unknown message type: " << std::hex << static_cast<int>(type)
-                //           << std::dec << std::endl;
             }
         }
     });
@@ -152,27 +138,12 @@ void CBoard::send(Command command) {
     }
 }
 
-// 串口通信下已弃用
-// std::string CBoard::read_yaml(const std::string& config_path) {
-//     auto yaml = tools::load(config_path);
-
-//     quaternion_canid_   = tools::read<int>(yaml, "quaternion_canid");
-//     bullet_speed_canid_ = tools::read<int>(yaml, "bullet_speed_canid");
-//     send_canid_         = tools::read<int>(yaml, "send_canid");
-
-//     if (!yaml["can_interface"]) {
-//         throw std::runtime_error("Missing 'can_interface' in YAML configuration.");
-//     }
-
-//     return yaml["can_interface"].as<std::string>();
-// }
-
 void CBoard::read_fun_1(Message_phoenix& msg) {
     auto timestamp = std::chrono::steady_clock::now();
 
     Autoaim_s data = reinterpret_cast<Autoaim_s&>(msg.data);
     if (data.mode < MODES.size()) {
-        mode = static_cast<Mode>(data.mode);
+        mode = normalize_mcu_mode_for_auto_aim(static_cast<Mode>(data.mode));
     } else if (cboard_debug_log_) {
         tools::logger()->warn(
             "[CBoard] Invalid mode from MCU: {} (keep current {})",
@@ -191,8 +162,8 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
     }
     double raw_yaw = data.yaw;
     double raw_pitch = data.pitch;
-    double yaw      = raw_yaw;
-    double pitch    = raw_pitch;
+    double yaw = raw_yaw;
+    double pitch = raw_pitch;
 
     // // 记录原始读取值，便于排查数据格式/协议问题
     // tools::logger()->debug("[CBoard] raw angles: yaw={}, pitch={}, degrees_flag={}", yaw, pitch,

@@ -168,7 +168,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (mode != io::Mode::auto_aim && mode != io::Mode::outpost) {
+        if (mode != io::Mode::auto_aim) {
             if (cboard) {
                 cboard->send({false, false, 0.0, 0.0, 0.0, 0.0});
             }

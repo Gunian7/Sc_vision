@@ -34,6 +34,9 @@ set(OpenVINO_DIR "/opt/intel/openvino_2024.6.0/runtime/cmake/")
 find_package(OpenVINO REQUIRED)
 find_package(fastcdr REQUIRED)
 
+# 自定义 ROS 消息包：与 io/hero_ros_board 中 #include "<包名>/msg/..." 一致；整栈默认 hero_interfaces。只改下一行，或 cmake -DHERO_MSGS_PACKAGE=...
+set(HERO_MSGS_PACKAGE hero_interfaces CACHE STRING "ament 自定义消息包名")
+
 include_directories(${EIGEN3_INCLUDE_DIR})
 include_directories(${OpenCV_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR})
@@ -133,9 +136,70 @@ target_link_libraries(planner_test_offline ${OpenCV_LIBS} yaml-cpp auto_aim tool
 # 检查 ROS 环境
 find_package(ament_cmake QUIET)
 find_package(rclcpp QUIET)
+find_package(sensor_msgs QUIET)
+find_package(cv_bridge QUIET)
 find_package(std_msgs QUIET)
 find_package(rosidl_typesupport_cpp QUIET)
 find_package(sp_msgs QUIET)
+find_package(${HERO_MSGS_PACKAGE} QUIET)
+
+# Hero：ROS 图像 + HeroRosBoard；hero_tf_test / hero_ros_test 依赖自定义消息包 + rclcpp
+if(TARGET io_hero_ros_board AND ament_cmake_FOUND AND rclcpp_FOUND AND ${HERO_MSGS_PACKAGE}_FOUND)
+    add_executable(hero_tf_test src/hero_tf_test.cpp)
+    target_link_libraries(hero_tf_test hero_solver_core io_hero_ros_board tools)
+    ament_target_dependencies(hero_tf_test rclcpp ${HERO_MSGS_PACKAGE})
+
+    add_executable(hero_ros_test src/hero_ros_test.cpp)
+    target_link_libraries(hero_ros_test yaml-cpp)
+    ament_target_dependencies(hero_ros_test rclcpp ${HERO_MSGS_PACKAGE})
+endif()
+
+# Hero：ROS 图像话题频率统计
+if(ament_cmake_FOUND AND rclcpp_FOUND AND sensor_msgs_FOUND)
+    add_executable(hero_camera_ros_test src/hero_camera_ros_test.cpp)
+    target_link_libraries(hero_camera_ros_test ${OpenCV_LIBS} yaml-cpp tools)
+    ament_target_dependencies(hero_camera_ros_test rclcpp sensor_msgs)
+endif()
+
+# Hero：ROS 图像 + HeroRosBoard 订阅自瞄反馈（自定义 Autoaim 等）
+if(TARGET io_image_from_ros AND TARGET io_hero_ros_board AND ament_cmake_FOUND AND rclcpp_FOUND
+   AND sensor_msgs_FOUND AND cv_bridge_FOUND AND ${HERO_MSGS_PACKAGE}_FOUND)
+    add_executable(hero src/hero.cpp)
+    target_link_libraries(
+        hero
+        ${OpenCV_LIBS}
+        yaml-cpp
+        tools
+        io
+        io_image_from_ros
+        io_hero_ros_board
+        hero_solver
+        auto_aim
+    )
+    ament_target_dependencies(hero rclcpp sensor_msgs cv_bridge ${HERO_MSGS_PACKAGE})
+
+    foreach(
+        _hero_t
+        hero_detectwithpnp_test
+        hero_observe_test
+        hero_withoutboard_test
+        hero_full_test)
+        add_executable(${_hero_t} src/${_hero_t}.cpp)
+        target_link_libraries(
+            ${_hero_t}
+            ${OpenCV_LIBS}
+            yaml-cpp
+            tools
+            io
+            io_image_from_ros
+            io_hero_ros_board
+            hero_solver
+            auto_aim
+        )
+        ament_target_dependencies(${_hero_t} rclcpp sensor_msgs cv_bridge ${HERO_MSGS_PACKAGE})
+    endforeach()
+endif()
+
 # 只有在找到 ROS 环境时才会添加 sentry 和 publish_test
 if(ament_cmake_FOUND AND rclcpp_FOUND AND std_msgs_FOUND AND rosidl_typesupport_cpp_FOUND AND sp_msgs_FOUND)
     # 编译 sentry 和 publish_test
