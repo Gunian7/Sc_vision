@@ -21,7 +21,8 @@ cmake --build build --target standard_mpc_se -j$(nproc)
 ```
 io部分可能需要单独colcon build编译，不然找不到对应的serial：
 
-（如果还有报错请移步询问ai，可能需要安装串口库，届时请直接(sudo apt install ros-humble-serial ros-humble-ros2-serial-driver)此为示例）
+（如果还有报错请移步询问ai，可能需要安装串口库，届时请直接安装对应发行版依赖，例如 jazzy：
+`sudo apt install ros-jazzy-serial ros-jazzy-ros2-serial-driver`）
 ```bash
 cd io
 colcon build --symlink-install
@@ -57,6 +58,8 @@ udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
 ```bash
 ./build/camera_test --config-path=configs/standard.yaml --display
 ```
+> 注意：`camera_test` **只有在传入 `--display`（或 `-d`）时才会调用 `imshow` 弹窗**。  
+> 不加该参数时程序只会在终端打印 FPS，看起来像“没有窗口”。
 
 #### 通信测试
 验证与 C 板通讯（打印欧拉角 + 弹速）：
@@ -184,10 +187,12 @@ BIN_PATH="./build/standard_mpc_se"       # 运行的可执行文件
 CONFIG_PATH="configs/standard.yaml"      # 配置文件路径
 ```
 
-ROS 2 环境变量（如需要）已在脚本开头自动 source：
+ROS 2 环境变量（如需要）建议在脚本开头按本机发行版自动 source（当前机器为 jazzy）：
 ```bash
-if [ -f /opt/ros/humble/setup.bash ]; then
-    source /opt/ros/humble/setup.bash
+if [ -f /opt/ros/jazzy/setup.zsh ]; then
+    source /opt/ros/jazzy/setup.zsh
+elif [ -f /opt/ros/jazzy/setup.bash ]; then
+    source /opt/ros/jazzy/setup.bash
 fi
 ```
 > 如使用其他 ROS 版本，修改路径即可。

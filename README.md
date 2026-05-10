@@ -41,6 +41,32 @@
 ---
 ## 2. 快速上手 (Quickstart)
 见 [Quickstart.md](Quickstart.md)
+
+### 2.1 运行环境提示（ROS 2 + 相机测试）
+
+若你在运行测试程序（如 `camera_test`）时遇到以下现象：
+
+- 报错缺少 ROS 相关动态库（如 `libament_index_cpp.so`）
+- 程序有 FPS 输出但没有 `imshow` 窗口
+
+请注意：
+
+1. `source /opt/ros/<distro>/setup.*` 只对**当前终端会话**生效，开新终端需要重新加载；
+2. `camera_test` 只有在传入 `--display`（或 `-d`）时才会弹窗显示图像。
+
+项目根目录已提供脚本 `run_camera_test.sh`（当前按 jazzy 环境配置）用于一键运行相机测试：
+- 自动清理常见 ROS/colcon 污染变量
+- 自动 source `/opt/ros/jazzy/setup.zsh`
+- 如存在 `io/ros2/install` overlay 则自动叠加
+- 默认附带 `--display`
+
+使用方式：
+
+```bash
+chmod +x run_camera_test.sh
+./run_camera_test.sh
+```
+
 ## 3. 代码结构
 
 ```
