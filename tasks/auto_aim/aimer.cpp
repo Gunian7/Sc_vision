@@ -36,6 +36,10 @@ Aimer::Aimer(const std::string & config_path)
   if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
     use_center_aim_when_high_speed_ = yaml["use_center_aim_when_high_speed"].as<bool>();
   }
+  pre_aim_max_delta_angle_ = 60.0 / 57.3;
+  if (yaml["pre_aim_max_delta_angle"].IsDefined()) {
+    pre_aim_max_delta_angle_ = yaml["pre_aim_max_delta_angle"].as<double>() / 57.3;
+  }
   speed_angle_ = decision_speed_;
   speed_angle_max_ = speed_angle_;
   if (yaml["comming_angle_high"].IsDefined()) {
@@ -112,7 +116,7 @@ io::Command Aimer::aim(
     target.predict(future);
   }
 
-  auto aim_point0 = choose_aim_point(target);
+  auto aim_point0 = choose_aim_point(target, 0.0);
   debug_aim_point = aim_point0;
   if (!aim_point0.valid) {
     // tools::logger()->debug("Invalid aim_point0.");
@@ -142,7 +146,7 @@ io::Command Aimer::aim(
     iteration_target[iter].predict(predict_time);
 
     // 计算瞄准点
-    auto aim_point = choose_aim_point(iteration_target[iter]);
+    auto aim_point = choose_aim_point(iteration_target[iter], prev_fly_time);
     debug_aim_point = aim_point;
     final_target = iteration_target[iter];
     if (!aim_point.valid) {
@@ -206,7 +210,7 @@ io::Command Aimer::aim(
   return command;
 }
 
-AimPoint Aimer::choose_aim_point(const Target & target)
+AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
 {
   Eigen::VectorXd ekf_x = target.ekf_x();
   std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
@@ -231,9 +235,15 @@ AimPoint Aimer::choose_aim_point(const Target & target)
 
   // 如果delta_angle为0，则该装甲板中心和整车中心的连线在世界坐标系的xy平面过原点
   std::vector<double> delta_angle_list;
+  std::vector<double> effective_delta_angle_list;
+  delta_angle_list.reserve(armor_num);
+  effective_delta_angle_list.reserve(armor_num);
+
   for (std::size_t i = 0; i < armor_num; i++) {
     auto delta_angle = tools::limit_rad(armor_xyza_list[i][3] - center_yaw);
     delta_angle_list.emplace_back(delta_angle);
+    auto effective_delta = tools::limit_rad(delta_angle + spin_w * fly_time);
+    effective_delta_angle_list.emplace_back(effective_delta);
   }
 
   auto pick_best_by_min_delta = [&](const std::vector<int> & id_list) -> int {
@@ -243,7 +253,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
       if (id < 0 || id >= static_cast<int>(armor_num)) {
         continue;
       }
-      const auto abs_delta = std::abs(delta_angle_list[id]);
+      const auto abs_delta = std::abs(effective_delta_angle_list[id]);
       if (abs_delta < best_abs_delta) {
         best_abs_delta = abs_delta;
         best_id = id;
@@ -256,7 +266,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
     if (std::abs(target.ekf_x()[8]) <= 2 && target.name != ArmorName::outpost) {
       std::vector<int> id_list;
       for (std::size_t i = 0; i < armor_num; i++) {
-        if (std::abs(delta_angle_list[i]) > 60 / 57.3) continue;
+        if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
         id_list.push_back(static_cast<int>(i));
       }
 
@@ -299,9 +309,10 @@ AimPoint Aimer::choose_aim_point(const Target & target)
     }
 
     for (std::size_t i = 0; i < armor_num; i++) {
-      if (std::abs(delta_angle_list[i]) > coming_angle) continue;
-      if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
-      if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+      if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
+      if (std::abs(effective_delta_angle_list[i]) > coming_angle) continue;
+      if (ekf_x[7] > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
+      if (ekf_x[7] < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
     }
 
     return {false, armor_xyza_list[0]};
@@ -311,7 +322,7 @@ AimPoint Aimer::choose_aim_point(const Target & target)
     // 选择在可射击范围内的装甲板
     std::vector<int> id_list;
     for (std::size_t i = 0; i < armor_num; i++) {
-      if (std::abs(delta_angle_list[i]) > 60 / 57.3) continue;
+      if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
       id_list.push_back(static_cast<int>(i));
     }
     // 绝无可能
@@ -387,9 +398,10 @@ AimPoint Aimer::choose_aim_point(const Target & target)
 
   // 在小陀螺时，一侧的装甲板不断出现，另一侧的装甲板不断消失，显然前者被打中的概率更高
   for (std::size_t i = 0; i < armor_num; i++) {
-    if (std::abs(delta_angle_list[i]) > coming_angle) continue;
-    if (ekf_x[7] > 0 && delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
-    if (ekf_x[7] < 0 && delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+    if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
+    if (std::abs(effective_delta_angle_list[i]) > coming_angle) continue;
+    if (ekf_x[7] > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
+    if (ekf_x[7] < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
   }
 
   std::vector<int> all_ids;
