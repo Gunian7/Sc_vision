@@ -47,8 +47,6 @@ Target::Target(
   const Eigen::VectorXd & ypr = armor.ypr_in_world;
 
   height_offsets_.fill(0.0);
-  outpost_height_rank_by_id_.fill(-1);
-  outpost_height_min_samples_ = 8;
   if (name == ArmorName::outpost && armor_num_ == 3) {
     height_init_done_ = false;
     height_init_start_ = t;
@@ -93,8 +91,6 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   height_offsets_.fill(0.0);
-  outpost_height_rank_by_id_.fill(-1);
-  outpost_height_min_samples_ = 8;
   height_init_done_ = true;
   last_jump_dir_ = 0;
   has_jump_time_ = false;
@@ -188,19 +184,8 @@ void Target::predict(double dt)
   // clang-format on
 
   // 防止夹角求和出现异常值
-  // 前哨站使用 constant rotation 风格预测：位置不随速度传播，仅传播 yaw/vyaw
   auto f = [&](const Eigen::VectorXd & x) -> Eigen::VectorXd {
     Eigen::VectorXd x_prior = F * x;
-
-    if (name == ArmorName::outpost) {
-      x_prior[0] = x[0];  // cx
-      x_prior[1] = 0;     // vx
-      x_prior[2] = x[2];  // cy
-      x_prior[3] = 0;     // vy
-      x_prior[4] = x[4];  // cz
-      x_prior[5] = 0;     // vz
-    }
-
     x_prior[6] = tools::limit_rad(x_prior[6]);
     return x_prior;
   };
@@ -248,40 +233,28 @@ void Target::update(const Armor & armor)
   if (name == ArmorName::outpost && armor_num_ == 3 && !height_init_done_) {
     height_samples_[id].push_back(armor.xyz_in_world[2]);
     auto elapsed = std::chrono::duration<double>(t_ - height_init_start_).count();
-
-    bool enough_samples = true;
-    for (int i = 0; i < 3; ++i) {
-      if (static_cast<int>(height_samples_[i].size()) < outpost_height_min_samples_) {
-        enough_samples = false;
-        break;
-      }
-    }
-
-    if (elapsed >= 2.5 && enough_samples && convergened()) {
-      std::array<double, 3> robust_z;
+    if (elapsed >= 2.5) {
+      std::array<double, 3> means;
       for (int i = 0; i < 3; ++i) {
-        auto samples = height_samples_[i];
-        std::sort(samples.begin(), samples.end());
-        robust_z[i] = samples[samples.size() / 2];  // median
+        if (height_samples_[i].empty()) {
+          means[i] = ekf_.x[4];
+          continue;
+        }
+        double sum = 0.0;
+        for (auto z : height_samples_[i]) sum += z;
+        means[i] = sum / static_cast<double>(height_samples_[i].size());
       }
 
       std::array<int, 3> order{0, 1, 2};
-      std::sort(order.begin(), order.end(), [&](int a, int b) { return robust_z[a] < robust_z[b]; });
+      std::sort(order.begin(), order.end(), [&](int a, int b) { return means[a] < means[b]; });
 
       height_offsets_.fill(0.0);
       height_offsets_[order[0]] = -0.1;
       height_offsets_[order[1]] = 0.0;
       height_offsets_[order[2]] = 0.1;
-
-      outpost_height_rank_by_id_.fill(-1);
-      outpost_height_rank_by_id_[order[0]] = 0;  // low
-      outpost_height_rank_by_id_[order[1]] = 1;  // middle
-      outpost_height_rank_by_id_[order[2]] = 2;  // high
-
       height_init_done_ = true;
       tools::logger()->info(
-        "[Target] Outpost rank fixed: id0={}, id1={}, id2={}, offsets=({:.3f},{:.3f},{:.3f})",
-        outpost_height_rank_by_id_[0], outpost_height_rank_by_id_[1], outpost_height_rank_by_id_[2],
+        "[Target] Outpost height offsets fixed: id0={:.3f}, id1={:.3f}, id2={:.3f}",
         height_offsets_[0], height_offsets_[1], height_offsets_[2]);
     }
   }
@@ -529,24 +502,6 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
 bool Target::checkinit() { return isinit; }
 
 bool Target::outpost_height_ready() const { return height_init_done_; }
-
-int Target::outpost_height_rank(int id) const
-{
-  if (name != ArmorName::outpost || armor_num_ != 3) return -1;
-  if (!height_init_done_) return -1;
-  if (id < 0 || id >= 3) return -1;
-  return outpost_height_rank_by_id_[id];
-}
-
-bool Target::outpost_rank_ready() const
-{
-  if (name != ArmorName::outpost || armor_num_ != 3) return false;
-  if (!height_init_done_) return false;
-  for (int i = 0; i < 3; ++i) {
-    if (outpost_height_rank_by_id_[i] < 0) return false;
-  }
-  return true;
-}
 
 int Target::last_jump_dir() const { return last_jump_dir_; }
 

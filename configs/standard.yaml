@@ -140,7 +140,7 @@ imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
 use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
+use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
