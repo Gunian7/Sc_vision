@@ -53,6 +53,8 @@ public:
   bool convergened();
 
   bool outpost_height_ready() const;
+  int outpost_height_rank(int id) const;
+  bool outpost_rank_ready() const;
   int last_jump_dir() const;
   bool has_jump_time() const;
   std::chrono::steady_clock::time_point last_jump_time() const;
@@ -87,6 +89,8 @@ private:
   std::chrono::steady_clock::time_point height_init_start_;
   std::array<std::vector<double>, 3> height_samples_;
   std::array<double, 3> height_offsets_;
+  std::array<int, 3> outpost_height_rank_by_id_;
+  int outpost_height_min_samples_;
   int last_jump_dir_;
   bool has_jump_time_;
   std::chrono::steady_clock::time_point last_jump_time_;

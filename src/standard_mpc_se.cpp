@@ -266,14 +266,6 @@ int main(int argc, char* argv[]) {
         if (!targets.empty()) {
             auto target                                  = targets.front();
             std::vector<Eigen::Vector4d> armor_xyza_list = target.armor_xyza_list();
-            std::array<int, 3> outpost_order{0, 1, 2};
-            if (target.name == auto_aim::ArmorName::outpost && armor_xyza_list.size() == 3) {
-                std::sort(
-                    outpost_order.begin(),
-                    outpost_order.end(),
-                    [&](int a, int b) { return armor_xyza_list[a][2] < armor_xyza_list[b][2]; }
-                );
-            }
 
             bool show_jump_up = false;
             bool show_jump_down = false;
@@ -307,10 +299,14 @@ int main(int argc, char* argv[]) {
                 tools::draw_text(img, fmt::format("id:{}", i), center, { 255, 255, 0 });
 
                 if (target.name == auto_aim::ArmorName::outpost && armor_xyza_list.size() == 3) {
-                    std::string tag = "middle";
-                    if (static_cast<int>(i) == outpost_order[0]) tag = "low";
-                    if (static_cast<int>(i) == outpost_order[2]) tag = "high";
-                    tools::draw_text(img, tag, {center.x, center.y + 18.0F}, { 0, 255, 255 });
+                    std::string tag = "unknown";
+                    if (target.outpost_rank_ready()) {
+                        auto rank = target.outpost_height_rank(static_cast<int>(i));
+                        if (rank == 0) tag = "low";
+                        if (rank == 1) tag = "middle";
+                        if (rank == 2) tag = "high";
+                    }
+                    tools::draw_text(img, tag, cv::Point2f(center.x, center.y + 18.0F), { 0, 255, 255 });
                 }
             }
             Eigen::VectorXd x = target.ekf_x();
@@ -335,10 +331,10 @@ int main(int argc, char* argv[]) {
                 aim_center.x /= static_cast<float>(image_points.size());
                 aim_center.y /= static_cast<float>(image_points.size());
                 if (show_jump_up) {
-                    tools::draw_text(img, "Up", {aim_center.x, aim_center.y - 14.0F}, { 0, 165, 255 });
+                    tools::draw_text(img, "Up", cv::Point2f(aim_center.x, aim_center.y - 14.0F), { 0, 165, 255 });
                 }
                 if (show_jump_down) {
-                    tools::draw_text(img, "Down", {aim_center.x, aim_center.y - 14.0F}, { 0, 0, 255 });
+                    tools::draw_text(img, "Down", cv::Point2f(aim_center.x, aim_center.y - 14.0F), { 0, 0, 255 });
                 }
             }
 
