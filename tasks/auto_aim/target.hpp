@@ -6,6 +6,7 @@
 #include <chrono>
 #include <optional>
 #include <queue>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,7 @@ public:
   void predict(std::chrono::steady_clock::time_point t);
   void predict(double dt);
   void update(const Armor & armor);
+  bool match_and_update(const std::vector<Armor> & armors);
 
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
@@ -64,6 +66,7 @@ public:
     double linear_acc_normal, double angular_acc_normal, double linear_acc_outpost,
     double angular_acc_outpost);
   void set_measurement_noise(double yaw_noise, double pitch_noise);
+  void set_match_gates(double tracked_gate, double init_gate);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
   void set_angular_velocity(double angular_velocity);
   void set_motion_state(MotionState state) { motion_state_ = state; }
@@ -87,6 +90,13 @@ private:
   std::chrono::steady_clock::time_point height_init_start_;
   std::array<std::vector<double>, 3> height_samples_;
   std::array<double, 3> height_offsets_;
+  std::set<int> outpost_seen_ids_;
+  bool outpost_all_ids_seen_;
+  double outpost_height_min_gap_;
+  double outpost_match_z_gate_;
+  double outpost_match_z_penalty_scale_;
+  double match_gate_tracked_;
+  double match_gate_init_;
   int last_jump_dir_;
   bool has_jump_time_;
   std::chrono::steady_clock::time_point last_jump_time_;
@@ -113,7 +123,16 @@ private:
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;
 
-  void update_ypda(const Armor & armor, int id);  // yaw pitch distance angle
+  int match_armor_id(const Armor & armor, double * best_d2 = nullptr) const;
+  Eigen::Vector4d measurement_from_armor(const Armor & armor) const;
+  Eigen::MatrixXd measurement_noise_matrix(const Armor & armor) const;
+  Eigen::Vector4d predicted_measurement(const Eigen::VectorXd & x, int id) const;
+  Eigen::VectorXd measurement_subtract(const Eigen::VectorXd & a, const Eigen::VectorXd & b) const;
+  double robust_height_stat(const std::vector<double> & samples) const;
+  void update_outpost_seen_ids(int id);
+  void update_outpost_height_samples(const Armor & armor, int id);
+  void update_switch_state(int id, const std::vector<Eigen::Vector4d> & xyza_list);
+  void update_ypda(const Armor & armor, int id);
 
   Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
   Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;

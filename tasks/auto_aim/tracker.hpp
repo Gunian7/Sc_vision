@@ -52,6 +52,8 @@ private:
   double process_noise_angular_outpost_;
   double measurement_noise_yaw_;
   double measurement_noise_pitch_;
+  double target_match_gate_tracked_;
+  double target_match_gate_init_;
   bool force_target_angular_velocity_;
   double forced_target_angular_velocity_;
   std::string state_, pre_state_;

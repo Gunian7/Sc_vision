@@ -310,7 +310,7 @@ int main(int argc, char* argv[]) {
                     std::string tag = "middle";
                     if (static_cast<int>(i) == outpost_order[0]) tag = "low";
                     if (static_cast<int>(i) == outpost_order[2]) tag = "high";
-                    tools::draw_text(img, tag, {center.x, center.y + 18.0F}, { 0, 255, 255 });
+                    tools::draw_text(img, tag, cv::Point2f{center.x, center.y + 18.0F}, { 0, 255, 255 });
                 }
             }
             Eigen::VectorXd x = target.ekf_x();
@@ -335,10 +335,10 @@ int main(int argc, char* argv[]) {
                 aim_center.x /= static_cast<float>(image_points.size());
                 aim_center.y /= static_cast<float>(image_points.size());
                 if (show_jump_up) {
-                    tools::draw_text(img, "Up", {aim_center.x, aim_center.y - 14.0F}, { 0, 165, 255 });
+                    tools::draw_text(img, "Up", cv::Point2f{aim_center.x, aim_center.y - 14.0F}, { 0, 165, 255 });
                 }
                 if (show_jump_down) {
-                    tools::draw_text(img, "Down", {aim_center.x, aim_center.y - 14.0F}, { 0, 0, 255 });
+                    tools::draw_text(img, "Down", cv::Point2f{aim_center.x, aim_center.y - 14.0F}, { 0, 0, 255 });
                 }
             }
 

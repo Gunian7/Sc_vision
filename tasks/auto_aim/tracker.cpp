@@ -12,6 +12,34 @@
 
 namespace auto_aim
 {
+namespace
+{
+bool should_mark_bad_converge(const Target & target)
+{
+  const auto & ekf = target.ekf();
+  const auto sample_count = ekf.recent_nis_failures.size();
+  const auto min_samples = std::min<size_t>(ekf.window_size, 20);
+  if (sample_count < min_samples) {
+    return false;
+  }
+
+  const int recent_failures =
+    std::accumulate(ekf.recent_nis_failures.begin(), ekf.recent_nis_failures.end(), 0);
+  const double fail_rate = static_cast<double>(recent_failures) / static_cast<double>(sample_count);
+  constexpr double fail_rate_threshold = 0.4;
+
+  if (recent_failures >= static_cast<int>(fail_rate_threshold * ekf.window_size)) {
+    tools::logger()->warn(
+      "[Target] Bad converge: recent_nis_failures={}/{}, fail_rate={:.3f}, last_nis={:.3f}, "
+      "window_size={}",
+      recent_failures, sample_count, fail_rate, ekf.last_nis, ekf.window_size);
+    return true;
+  }
+
+  return false;
+}
+}  // namespace
+
 Tracker::Tracker(const std::string & config_path, Solver & solver)
 : solver_{solver},
   detect_count_(0),
@@ -49,6 +77,8 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   process_noise_angular_outpost_ = 0.1;
   measurement_noise_yaw_ = 2e-3;
   measurement_noise_pitch_ = 2e-3;
+  target_match_gate_tracked_ = 12.0;
+  target_match_gate_init_ = 24.0;
   if (yaml["jump_z_threshold"].IsDefined()) {
     jump_z_threshold_ = yaml["jump_z_threshold"].as<double>();
   }
@@ -87,6 +117,12 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
   if (yaml["target_measurement_noise_pitch"].IsDefined()) {
     measurement_noise_pitch_ = yaml["target_measurement_noise_pitch"].as<double>();
+  }
+  if (yaml["target_match_gate_tracked"].IsDefined()) {
+    target_match_gate_tracked_ = yaml["target_match_gate_tracked"].as<double>();
+  }
+  if (yaml["target_match_gate_init"].IsDefined()) {
+    target_match_gate_init_ = yaml["target_match_gate_init"].as<double>();
   }
   force_target_angular_velocity_ = false;
   forced_target_angular_velocity_ = 0.0;
@@ -224,11 +260,7 @@ std::list<Target> Tracker::track(
   }
 
   // 收敛效果检测：
-  if (
-    std::accumulate(
-      target_.ekf().recent_nis_failures.begin(), target_.ekf().recent_nis_failures.end(), 0) >=
-    (0.4 * target_.ekf().window_size)) {
-    tools::logger()->debug("[Target] Bad Converge Found!");
+  if (state_ != "lost" && should_mark_bad_converge(target_)) {
     state_ = "lost";
     return {};
   }
@@ -314,6 +346,12 @@ std::tuple<omniperception::DetectionResult, std::list<Target>> Tracker::track(
     tools::logger()->debug("[Tracker] Target diverged!");
     state_ = "lost";
     return {switch_target, {}};  // 返回switch_target和空的targets
+  }
+
+  // 收敛效果检测：
+  if (state_ != "lost" && should_mark_bad_converge(target_)) {
+    state_ = "lost";
+    return {switch_target, {}};
   }
 
   if (state_ == "lost") return {switch_target, {}};  // 返回switch_target和空的targets
@@ -418,6 +456,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
     process_noise_linear_normal_, process_noise_angular_normal_, process_noise_linear_outpost_,
     process_noise_angular_outpost_);
   target_.set_measurement_noise(measurement_noise_yaw_, measurement_noise_pitch_);
+  target_.set_match_gates(target_match_gate_tracked_, target_match_gate_init_);
   if (armor.name == ArmorName::outpost && outpost_jump_fire_cooldown_ > 0.0) {
     target_.set_jump_fire_cooldown(outpost_jump_fire_cooldown_);
   } else {
@@ -440,18 +479,21 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     target_.set_angular_velocity(forced_target_angular_velocity_);
   }
 
+  std::vector<Armor> candidates;
   for (auto & armor : armors) {
     if (armor.name != target_.name || armor.type != target_.armor_type) continue;
 
     solver_.solve(armor);
-    target_.update(armor);
-    update_motion_state(target_, t);
-    return true;
+    candidates.push_back(armor);
+  }
+
+  bool found = false;
+  if (!candidates.empty()) {
+    found = target_.match_and_update(candidates);
   }
 
   update_motion_state(target_, t);
-
-  return false;
+  return found;
 }
 
 void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::time_point t)

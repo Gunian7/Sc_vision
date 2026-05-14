@@ -70,11 +70,15 @@ imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 200.0  #400
 target_process_noise_linear_outpost: 10.0
-target_process_noise_angular_outpost: 0.1
+target_process_noise_angular_outpost: 10.0
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
 target_measurement_noise_yaw: 0.02    #0.002
 target_measurement_noise_pitch: 0.002
-force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），会把
+# 目标匹配门控阈值（马氏距离平方 d^2）
+target_match_gate_tracked: 12.0     # 越大越宽松，越容易进入追踪，但是不一定准
+target_match_gate_init: 24.0    # 追踪初始化匹配门限，通常设为tracked的2倍或更大
+# 形态考核参数（平时别用）
+force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），完整形态考核用
 forced_target_angular_velocity: 2.51 # rad/s
 
 #####-----aimer参数-----#####

@@ -74,6 +74,9 @@ target_process_noise_angular_outpost: 0.1
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
 target_measurement_noise_yaw: 0.02    #0.002
 target_measurement_noise_pitch: 0.002
+# 目标匹配门控阈值（马氏距离平方 d^2）
+target_match_gate_tracked: 12.0
+target_match_gate_init: 24.0
 force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），会把
 forced_target_angular_velocity: 2.51 # rad/s
 
