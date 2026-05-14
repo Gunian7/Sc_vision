@@ -47,11 +47,11 @@ outpost_max_temp_lost_count: 75
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
 jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
 jump_z_threshold: 0.07 # m 前哨站仍按z跳变判定
-jump_confirm_count: 2
+jump_confirm_count: 3
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
 jump_fire_cooldown: 0.01 # s 固定延时(不使用动态参数时生效)
 outpost_jump_fire_cooldown: 0.05 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
-jump_min_interval: 0.001 # s 跳变最小间隔
+jump_min_interval: 0.01 # s 跳变最小间隔
 motion_state_enable: true  # 是否启用运动状态判定，启用后会根据目标运动状态调整planner的参数
 enable_imm: true  # 是否启用IMM，启用后会根据目标运动状态在多个卡尔曼滤波器间切换
 motion_w_low: 5.0 # rad/s 角速度低阈值(滞回下边界)，用于区分慢速/快速旋转
@@ -70,16 +70,20 @@ imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 200.0  #400
 target_process_noise_linear_outpost: 10.0
-target_process_noise_angular_outpost: 0.1
+target_process_noise_angular_outpost: 10.0
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
 target_measurement_noise_yaw: 0.02    #0.002
 target_measurement_noise_pitch: 0.002
-force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），会把
+# 目标匹配门控阈值（马氏距离平方 d^2）
+target_match_gate_tracked: 12.0     # 越大越宽松，越容易进入追踪，但是不一定准
+target_match_gate_init: 24.0    # 追踪初始化匹配门限，通常设为tracked的2倍或更大
+# 形态考核参数（平时别用）
+force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），完整形态考核用
 forced_target_angular_velocity: 2.51 # rad/s
 
 #####-----aimer参数-----#####
-yaw_offset: 0.075   # 增大向左，反之向右
-pitch_offset: -1.0 # 增大向上 反之向下
+yaw_offset: 0.02   # 增大向左，反之向右
+pitch_offset: -6.0 # 增大向上 反之向下
 comming_angle: 55 # degree 55
 leaving_angle: 10 # degree 20
 comming_angle_high: 30 # degree 高速(角速度大)使用
@@ -89,19 +93,20 @@ leaving_end_angle: 3 # degree 极高速下的最小角度
 speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
 speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
 decision_speed: 9 # rad/s
-use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
+use_center_aim_when_high_speed: false # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
+pre_aim_max_delta_angle: 60 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
 
 #####-----auto aim fsm参数-----#####
 auto_aim_fsm:
   enable: true
   transfer_thresh: 8      # 连续计数阈值，越大切换越稳但更慢
   # rad/s 
-  single_whole_up: 2.5    # SINGLE -> WHOLE_CAR_ARMOR 上行阈值
-  single_whole_down: 1.8  # WHOLE_CAR_ARMOR -> SINGLE 下行阈值
-  whole_pair_up: 5.5      # WHOLE_CAR_ARMOR -> WHOLE_CAR_PAIR 上行阈值
-  whole_pair_down: 4.5    # WHOLE_CAR_PAIR -> WHOLE_CAR_ARMOR 下行阈值
-  pair_center_up: 8.0     # WHOLE_CAR_PAIR -> WHOLE_CAR_CENTER 上行阈值
-  pair_center_down: 6.5   # WHOLE_CAR_CENTER -> WHOLE_CAR_PAIR 下行阈值
+  single_whole_up: 2.5    # 单板 -> 整车 上行阈值
+  single_whole_down: 1.8  # 整车 -> 单板 下行阈值
+  whole_pair_up: 5.5      # 整车-> 对板 上行阈值
+  whole_pair_down: 4.5    # 对板 -> 整车 下行阈值
+  pair_center_up: 8.0     # 对板 -> 车心 上行阈值
+  pair_center_down: 6.5   # 车心 -> 对板 下行阈值
 
 high_speed_delay_time: -0.05 # s
 low_speed_delay_time: -0.08 # s planner use this value
@@ -139,7 +144,7 @@ imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
 use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
+use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡

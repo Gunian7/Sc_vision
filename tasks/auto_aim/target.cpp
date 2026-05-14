@@ -1,5 +1,8 @@
 #include "target.hpp"
 
+#include <algorithm>
+#include <cmath>
+#include <limits>
 #include <numeric>
 
 #include "tools/logger.hpp"
@@ -20,6 +23,12 @@ Target::Target(
   is_switch_(false),
   is_converged_(false),
   height_init_done_(true),
+  outpost_all_ids_seen_(false),
+  outpost_height_min_gap_(0.05),
+  outpost_match_z_gate_(0.16),
+  outpost_match_z_penalty_scale_(25.0),
+  match_gate_tracked_(12.0),
+  match_gate_init_(24.0),
   last_jump_dir_(0),
   has_jump_time_(false),
   jump_z_threshold_(0.02),
@@ -47,6 +56,7 @@ Target::Target(
   const Eigen::VectorXd & ypr = armor.ypr_in_world;
 
   height_offsets_.fill(0.0);
+  outpost_seen_ids_.clear();
   if (name == ArmorName::outpost && armor_num_ == 3) {
     height_init_done_ = false;
     height_init_start_ = t;
@@ -91,7 +101,14 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   height_offsets_.fill(0.0);
+  outpost_seen_ids_.clear();
   height_init_done_ = true;
+  outpost_all_ids_seen_ = false;
+  outpost_height_min_gap_ = 0.05;
+  outpost_match_z_gate_ = 0.16;
+  outpost_match_z_penalty_scale_ = 25.0;
+  match_gate_tracked_ = 12.0;
+  match_gate_init_ = 24.0;
   last_jump_dir_ = 0;
   has_jump_time_ = false;
   jump_z_threshold_ = 0.02;
@@ -199,67 +216,16 @@ void Target::predict(double dt)
 
 void Target::update(const Armor & armor)
 {
-  // 装甲板匹配
-  int id = 0;
-  auto min_angle_error = 1e10;
-  const std::vector<Eigen::Vector4d> & xyza_list = armor_xyza_list();
-
-  std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
-  for (int i = 0; i < armor_num_; i++) {
-    xyza_i_list.push_back({xyza_list[i], i});
+  int id = match_armor_id(armor);
+  if (id < 0) {
+    id = 0;
   }
 
-  std::sort(
-    xyza_i_list.begin(), xyza_i_list.end(),
-    [](const std::pair<Eigen::Vector4d, int> & a, const std::pair<Eigen::Vector4d, int> & b) {
-      Eigen::Vector3d ypd1 = tools::xyz2ypd(a.first.head(3));
-      Eigen::Vector3d ypd2 = tools::xyz2ypd(b.first.head(3));
-      return ypd1[2] < ypd2[2];
-    });
+  const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
+  update_outpost_seen_ids(id);
+  update_outpost_height_samples(armor, id);
 
-  // 取前3个distance最小的装甲板
-  for (int i = 0; i < 3; i++) {
-    const auto & xyza = xyza_i_list[i].first;
-    Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
-    auto angle_error = std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
-                       std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
-
-    if (std::abs(angle_error) < std::abs(min_angle_error)) {
-      id = xyza_i_list[i].second;
-      min_angle_error = angle_error;
-    }
-  }
-
-  if (name == ArmorName::outpost && armor_num_ == 3 && !height_init_done_) {
-    height_samples_[id].push_back(armor.xyz_in_world[2]);
-    auto elapsed = std::chrono::duration<double>(t_ - height_init_start_).count();
-    if (elapsed >= 2.5) {
-      std::array<double, 3> means;
-      for (int i = 0; i < 3; ++i) {
-        if (height_samples_[i].empty()) {
-          means[i] = ekf_.x[4];
-          continue;
-        }
-        double sum = 0.0;
-        for (auto z : height_samples_[i]) sum += z;
-        means[i] = sum / static_cast<double>(height_samples_[i].size());
-      }
-
-      std::array<int, 3> order{0, 1, 2};
-      std::sort(order.begin(), order.end(), [&](int a, int b) { return means[a] < means[b]; });
-
-      height_offsets_.fill(0.0);
-      height_offsets_[order[0]] = -0.1;
-      height_offsets_[order[1]] = 0.0;
-      height_offsets_[order[2]] = 0.1;
-      height_init_done_ = true;
-      tools::logger()->info(
-        "[Target] Outpost height offsets fixed: id0={:.3f}, id1={:.3f}, id2={:.3f}",
-        height_offsets_[0], height_offsets_[1], height_offsets_[2]);
-    }
-  }
-
-  if (static_cast<int>(xyza_list.size()) > id) {
+  if (id < static_cast<int>(xyza_list.size())) {
     auto current_z = xyza_list[id][2];
     if (!jump_avg_inited_[id]) {
       jump_avg_z_[id] = current_z;
@@ -269,6 +235,231 @@ void Target::update(const Armor & armor)
     }
   }
 
+  update_switch_state(id, xyza_list);
+  update_ypda(armor, id);
+}
+
+bool Target::match_and_update(const std::vector<Armor> & armors)
+{
+  int best_armor_index = -1;
+  int best_id = -1;
+  double best_d2 = std::numeric_limits<double>::infinity();
+
+  for (int i = 0; i < static_cast<int>(armors.size()); ++i) {
+    double d2 = std::numeric_limits<double>::infinity();
+    int id = match_armor_id(armors[i], &d2);
+    if (id < 0) {
+      continue;
+    }
+    if (d2 < best_d2) {
+      best_d2 = d2;
+      best_id = id;
+      best_armor_index = i;
+    }
+  }
+
+  if (best_armor_index < 0 || best_id < 0) {
+    return false;
+  }
+
+  const auto & armor = armors[best_armor_index];
+  const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
+  update_outpost_seen_ids(best_id);
+  update_outpost_height_samples(armor, best_id);
+
+  if (best_id < static_cast<int>(xyza_list.size())) {
+    auto current_z = xyza_list[best_id][2];
+    if (!jump_avg_inited_[best_id]) {
+      jump_avg_z_[best_id] = current_z;
+      jump_avg_inited_[best_id] = true;
+    } else {
+      jump_avg_z_[best_id] =
+        jump_avg_alpha_ * current_z + (1.0 - jump_avg_alpha_) * jump_avg_z_[best_id];
+    }
+  }
+
+  update_switch_state(best_id, xyza_list);
+  update_ypda(armor, best_id);
+  return true;
+}
+
+int Target::match_armor_id(const Armor & armor, double * best_d2) const
+{
+  int best_id = -1;
+  double min_d2 = std::numeric_limits<double>::infinity();
+  const Eigen::Vector4d z = measurement_from_armor(armor);
+  const Eigen::MatrixXd R = measurement_noise_matrix(armor);
+  const bool use_outpost_z_match =
+    (name == ArmorName::outpost && armor_num_ == 3 && height_init_done_);
+
+  for (int id = 0; id < armor_num_; ++id) {
+    const Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
+    const Eigen::Vector4d z_pred = predicted_measurement(ekf_.x, id);
+    const Eigen::VectorXd residual = measurement_subtract(z, z_pred);
+    const Eigen::MatrixXd S = H * ekf_.P * H.transpose() + R;
+    const Eigen::LDLT<Eigen::MatrixXd> ldlt(S);
+    if (ldlt.info() != Eigen::Success) {
+      continue;
+    }
+    double d2 = residual.transpose() * ldlt.solve(residual);
+    if (!std::isfinite(d2)) {
+      continue;
+    }
+
+    if (use_outpost_z_match) {
+      const double z_pred_world = h_armor_xyz(ekf_.x, id)[2];
+      const double z_residual = armor.xyz_in_world[2] - z_pred_world;
+      const double abs_z_residual = std::abs(z_residual);
+      if (abs_z_residual > outpost_match_z_gate_) {
+        continue;
+      }
+      d2 += outpost_match_z_penalty_scale_ * abs_z_residual * abs_z_residual;
+    }
+
+    if (d2 < min_d2) {
+      min_d2 = d2;
+      best_id = id;
+    }
+  }
+
+  if (best_d2 != nullptr) {
+    *best_d2 = min_d2;
+  }
+
+  if (best_id < 0) {
+    return -1;
+  }
+
+  const bool use_init_gate =
+    (name == ArmorName::outpost && armor_num_ == 3 && !outpost_all_ids_seen_);
+  const double gate = use_init_gate ? match_gate_init_ : match_gate_tracked_;
+  return min_d2 <= gate ? best_id : -1;
+}
+
+Eigen::Vector4d Target::measurement_from_armor(const Armor & armor) const
+{
+  return {armor.ypd_in_world[0], armor.ypd_in_world[1], armor.ypd_in_world[2], armor.ypr_in_world[0]};
+}
+
+Eigen::MatrixXd Target::measurement_noise_matrix(const Armor & armor) const
+{
+  auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
+  auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
+  Eigen::VectorXd R_dig(4);
+  R_dig << measurement_noise_yaw_, measurement_noise_pitch_,
+    log(std::abs(delta_angle) + 1) + 0.5,
+    log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 4.5e-2;
+  return R_dig.asDiagonal();
+}
+
+Eigen::Vector4d Target::predicted_measurement(const Eigen::VectorXd & x, int id) const
+{
+  Eigen::VectorXd xyz = h_armor_xyz(x, id);
+  Eigen::VectorXd ypd = tools::xyz2ypd(xyz);
+  auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
+  return {ypd[0], ypd[1], ypd[2], angle};
+}
+
+Eigen::VectorXd Target::measurement_subtract(
+  const Eigen::VectorXd & a, const Eigen::VectorXd & b) const
+{
+  Eigen::VectorXd c = a - b;
+  c[0] = tools::limit_rad(c[0]);
+  c[1] = tools::limit_rad(c[1]);
+  c[3] = tools::limit_rad(c[3]);
+  return c;
+}
+
+void Target::update_outpost_seen_ids(int id)
+{
+  if (name != ArmorName::outpost || armor_num_ != 3 || id < 0 || id >= armor_num_) {
+    return;
+  }
+  outpost_seen_ids_.insert(id);
+  if (static_cast<int>(outpost_seen_ids_.size()) >= armor_num_) {
+    outpost_all_ids_seen_ = true;
+  }
+}
+
+double Target::robust_height_stat(const std::vector<double> & samples) const
+{
+  if (samples.empty()) {
+    return 0.0;
+  }
+
+  std::vector<double> sorted = samples;
+  std::sort(sorted.begin(), sorted.end());
+  const size_t n = sorted.size();
+  if (n % 2 == 1) {
+    return sorted[n / 2];
+  }
+  return 0.5 * (sorted[n / 2 - 1] + sorted[n / 2]);
+}
+
+void Target::update_outpost_height_samples(const Armor & armor, int id)
+{
+  if (
+    name != ArmorName::outpost || armor_num_ != 3 || height_init_done_ || id < 0 ||
+    id >= armor_num_)
+  {
+    return;
+  }
+
+  height_samples_[id].push_back(armor.xyz_in_world[2]);
+  auto elapsed = std::chrono::duration<double>(t_ - height_init_start_).count();
+  if (elapsed < 2.5) {
+    return;
+  }
+
+  if (!outpost_all_ids_seen_) {
+    tools::logger()->debug(
+      "[Target] Outpost height init waiting for all ids, seen={}", outpost_seen_ids_.size());
+    return;
+  }
+
+  constexpr size_t kMinSamplesPerId = 3;
+  for (int i = 0; i < 3; ++i) {
+    if (height_samples_[i].size() < kMinSamplesPerId) {
+      tools::logger()->debug(
+        "[Target] Outpost height init waiting for samples: id{} has {}", i,
+        height_samples_[i].size());
+      return;
+    }
+  }
+
+  std::array<double, 3> stats;
+  for (int i = 0; i < 3; ++i) {
+    stats[i] = robust_height_stat(height_samples_[i]);
+  }
+
+  std::array<int, 3> order{0, 1, 2};
+  std::sort(order.begin(), order.end(), [&](int a, int b) { return stats[a] < stats[b]; });
+
+  const double low_mid_gap = stats[order[1]] - stats[order[0]];
+  const double mid_high_gap = stats[order[2]] - stats[order[1]];
+  if (low_mid_gap < outpost_height_min_gap_ || mid_high_gap < outpost_height_min_gap_) {
+    tools::logger()->debug(
+      "[Target] Outpost height init waiting for clearer separation: "
+      "median_z=[{:.3f}, {:.3f}, {:.3f}], gaps=[{:.3f}, {:.3f}], min_gap={:.3f}",
+      stats[0], stats[1], stats[2], low_mid_gap, mid_high_gap, outpost_height_min_gap_);
+    return;
+  }
+
+  height_offsets_.fill(0.0);
+  height_offsets_[order[0]] = -0.1;
+  height_offsets_[order[1]] = 0.0;
+  height_offsets_[order[2]] = 0.1;
+  height_init_done_ = true;
+  tools::logger()->info(
+    "[Target] Outpost height offsets fixed by robust id order: "
+    "id0={:.3f}, id1={:.3f}, id2={:.3f}, median_z=[{:.3f}, {:.3f}, {:.3f}], "
+    "gaps=[{:.3f}, {:.3f}]",
+    height_offsets_[0], height_offsets_[1], height_offsets_[2], stats[0], stats[1], stats[2],
+    low_mid_gap, mid_high_gap);
+}
+
+void Target::update_switch_state(int id, const std::vector<Eigen::Vector4d> & xyza_list)
+{
   if (id != last_id) {
     int candidate_dir = 0;
     double delta_yaw = 0.0;
@@ -323,9 +514,11 @@ void Target::update(const Armor & armor)
           has_jump_time_ = true;
           if (is_outpost_z_mode) {
             if (candidate_dir < 0) {
-              tools::logger()->info("[Target] Jump confirmed by outpost z: high -> low (dz={:.3f} m)", delta_z);
+              tools::logger()->info(
+                "[Target] Jump confirmed by outpost z: high -> low (dz={:.3f} m)", delta_z);
             } else {
-              tools::logger()->info("[Target] Jump confirmed by outpost z: low -> high (dz={:.3f} m)", delta_z);
+              tools::logger()->info(
+                "[Target] Jump confirmed by outpost z: low -> high (dz={:.3f} m)", delta_z);
             }
           } else {
             if (candidate_dir < 0) {
@@ -343,59 +536,34 @@ void Target::update(const Armor & armor)
     }
   }
 
-  if (id != 0) jumped = true;
-
-  if (id != last_id) {
-    is_switch_ = true;
-  } else {
-    is_switch_ = false;
+  if (id != 0) {
+    jumped = true;
   }
 
-  if (is_switch_) switch_count_++;
+  is_switch_ = (id != last_id);
+
+  if (is_switch_) {
+    switch_count_++;
+  }
 
   last_id = id;
   update_count_++;
-
-  update_ypda(armor, id);
 }
 
 void Target::update_ypda(const Armor & armor, int id)
 {
-  //观测jacobi
   Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
-  // Eigen::VectorXd R_dig{{4e-3, 4e-3, 1, 9e-2}};
-  auto center_yaw = std::atan2(armor.xyz_in_world[1], armor.xyz_in_world[0]);
-  auto delta_angle = tools::limit_rad(armor.ypr_in_world[0] - center_yaw);
-  Eigen::VectorXd R_dig(4);
-  R_dig << measurement_noise_yaw_, measurement_noise_pitch_,
-    log(std::abs(delta_angle) + 1) + 0.5,
-    log(std::abs(armor.ypd_in_world[2]) + 1) / 200 + 4.5e-2;
+  Eigen::MatrixXd R = measurement_noise_matrix(armor);
 
-  //测量过程噪声偏差的方差
-  Eigen::MatrixXd R = R_dig.asDiagonal();
-
-  // 定义非线性转换函数h: x -> z
   auto h = [&](const Eigen::VectorXd & x) -> Eigen::Vector4d {
-    Eigen::VectorXd xyz = h_armor_xyz(x, id);
-    Eigen::VectorXd ypd = tools::xyz2ypd(xyz);
-    auto angle = tools::limit_rad(x[6] + id * 2 * CV_PI / armor_num_);
-    return {ypd[0], ypd[1], ypd[2], angle};
+    return predicted_measurement(x, id);
   };
 
-  // 防止夹角求差出现异常值
-  auto z_subtract = [](const Eigen::VectorXd & a, const Eigen::VectorXd & b) -> Eigen::VectorXd {
-    Eigen::VectorXd c = a - b;
-    c[0] = tools::limit_rad(c[0]);
-    c[1] = tools::limit_rad(c[1]);
-    c[3] = tools::limit_rad(c[3]);
-    return c;
+  auto z_subtract = [&](const Eigen::VectorXd & a, const Eigen::VectorXd & b) -> Eigen::VectorXd {
+    return measurement_subtract(a, b);
   };
 
-  const Eigen::VectorXd & ypd = armor.ypd_in_world;
-  const Eigen::VectorXd & ypr = armor.ypr_in_world;
-  Eigen::VectorXd z(4);
-  z << ypd[0], ypd[1], ypd[2], ypr[0];  //获得观测量
-
+  Eigen::VectorXd z = measurement_from_armor(armor);
   ekf_.update(z, H, R, h, z_subtract);
 }
 
@@ -545,6 +713,12 @@ void Target::set_measurement_noise(double yaw_noise, double pitch_noise)
 {
   measurement_noise_yaw_ = std::max(1e-9, yaw_noise);
   measurement_noise_pitch_ = std::max(1e-9, pitch_noise);
+}
+
+void Target::set_match_gates(double tracked_gate, double init_gate)
+{
+  match_gate_tracked_ = std::max(1e-6, tracked_gate);
+  match_gate_init_ = std::max(match_gate_tracked_, init_gate);
 }
 
 bool Target::in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const

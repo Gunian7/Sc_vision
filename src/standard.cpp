@@ -108,7 +108,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        if (mode != io::Mode::auto_aim) {
+        if (mode != io::Mode::auto_aim && mode != io::Mode::outpost) {
             cboard.send({false, false, 0.0, 0.0, 0.0, 0.0});
             frame_count++;
             continue;

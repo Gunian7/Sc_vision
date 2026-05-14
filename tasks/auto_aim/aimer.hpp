@@ -51,11 +51,12 @@ private:
   double low_speed_delay_time_;
   double decision_speed_;
   bool use_center_aim_when_high_speed_;
+  double pre_aim_max_delta_angle_;
   bool fsm_enable_;
   AutoAimFsmController fsm_controller_;
   AutoAimFsm fsm_state_;
 
-  AimPoint choose_aim_point(const Target & target);
+  AimPoint choose_aim_point(const Target & target, double fly_time = 0.0);
 };
 
 }  // namespace auto_aim

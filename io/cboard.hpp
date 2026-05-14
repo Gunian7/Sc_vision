@@ -28,7 +28,7 @@ typedef struct Autoaim_s {
     float pitch;
     uint8_t enemy_team_color;
     uint8_t mode; 
-    //  mode: 0-idle, 1-auto_aim, 2-small_buff, 3-big_buff, 4-outpost（解析后并入 auto_aim，见 mcu_mode.hpp）
+    //  mode: 0-idle, 1-auto_aim, 2-small_buff, 3-big_buff, 4-outpost
     uint8_t rune_flag;
     float bullet_speed;
 } Autoaim;
