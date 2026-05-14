@@ -12,8 +12,8 @@ namespace auto_aim {
 class Solver;
 
 /**
- * 仅给 hero 节点使用：从下位机姿态 + 可选关节 pitch 维护一套与 Solver 一致的 frame 链，
- * 提供 TF 式查询；并把 IMU 四元数同步到现有 Solver（PnP 仍用 Solver 内固定 R_camera2gimbal）。
+ * 仅给 hero 节点使用：从下位机姿态维护与 standard / Solver 一致的 frame 链（固定 YAML R_camera2gimbal），
+ * 提供 TF 式查询；并把 IMU 四元数同步到现有 Solver。
  */
 class HeroSolver {
 public:
@@ -22,14 +22,10 @@ public:
   /** 与 HeroRosBoard::imu_at / CBoard 同源的四元数（Z yaw × Y pitch）。 */
   void set_board_orientation(const Eigen::Quaterniond& q);
 
-  /** 图传/关节 pitch（弧度），参与 camera↔gimbal 有效旋转；仅影响本类 TF 接口，不改 Solver 内部外参。 */
-  void set_joint_pitch_rad(double rad);
-
-  /** 写入现有 Solver，等价于原 hero.cpp 中 solver.set_R_gimbal2world(q)。 */
+  /** 写入现有 Solver，等价于 standard.cpp 中 solver.set_R_gimbal2world(q)。 */
   void apply_to_solver(Solver& solver) const;
 
   Eigen::Quaterniond board_orientation() const { return q_board_; }
-  double joint_pitch_rad() const { return joint_pitch_rad_; }
 
   Eigen::Matrix3d R_gimbal2world() const { return frames_.R_gimbal2world(); }
   Eigen::Matrix3d R_camera2gimbal_effective() const { return frames_.R_camera2gimbal_effective(); }
@@ -43,7 +39,6 @@ public:
 private:
   hero_coord::HeroCoordinateFrames frames_;
   Eigen::Quaterniond q_board_{Eigen::Quaterniond::Identity()};
-  double joint_pitch_rad_{0.};
 };
 
 } // namespace auto_aim

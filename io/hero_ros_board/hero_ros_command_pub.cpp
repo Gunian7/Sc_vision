@@ -39,7 +39,7 @@ HeroRosCommandPublisher::HeroRosCommandPublisher(const std::string &config_path)
   }
 
   node_ = std::make_shared<rclcpp::Node>("hero_ros_command_pub");
-  pub_ = node_->create_publisher<communicate_26::msg::SerialInfo>(topic_, rclcpp::QoS(10).reliable());
+  pub_ = node_->create_publisher<hero_interfaces::msg::SerialInfo>(topic_, rclcpp::QoS(10).reliable());
   RCLCPP_INFO(node_->get_logger(),
               "SerialInfo publish topic=%s（可选：与 hero_common hero_link_node 的 vision_serial_topic 对齐）",
               topic_.c_str());
@@ -52,7 +52,7 @@ void HeroRosCommandPublisher::publish(const Command &cmd)
     return;
   }
 
-  communicate_26::msg::SerialInfo msg;
+  hero_interfaces::msg::SerialInfo msg;
   msg.yaw = static_cast<float>(cmd.yaw);
   msg.pitch = static_cast<float>(cmd.pitch);
   msg.vel_yaw = static_cast<float>(cmd.yaw_vel);

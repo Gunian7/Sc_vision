@@ -10,6 +10,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include "hero_interfaces/msg/autoaim.hpp"
+#include "io/hero_config_path.hpp"
 
 int main(int argc, char** argv)
 {
@@ -17,8 +18,10 @@ int main(int argc, char** argv)
 
   std::string topic = "/communicate/autoaim";
   if (argc >= 2) {
+    const std::string yaml_path =
+        io::resolve_config_path_next_to_build(argv[1], argv[0]);
     try {
-      auto yaml = YAML::LoadFile(argv[1]);
+      auto yaml = YAML::LoadFile(yaml_path);
       if (yaml["hero_autoaim_topic"]) {
         topic = yaml["hero_autoaim_topic"].as<std::string>();
       }
@@ -38,14 +41,13 @@ int main(int argc, char** argv)
       [node](const hero_interfaces::msg::Autoaim::SharedPtr msg) {
         RCLCPP_INFO(
             node->get_logger(),
-            "Autoaim stamp=%u.%09u frame=%s | pitch=%.5f high_gimbal_yaw=%.5f vtx_pitch=%.5f | "
+            "Autoaim stamp=%u.%09u frame=%s | pitch=%.5f high_gimbal_yaw=%.5f | "
             "enemy_color=%u mode=%u rune=%u low_gimbal_yaw=%.5f",
             msg->header.stamp.sec,
             msg->header.stamp.nanosec,
             msg->header.frame_id.c_str(),
             msg->pitch,
             msg->high_gimbal_yaw,
-            msg->vtx_pitch,
             static_cast<unsigned>(msg->enemy_team_color),
             static_cast<unsigned>(msg->mode),
             static_cast<unsigned>(msg->rune_flag),

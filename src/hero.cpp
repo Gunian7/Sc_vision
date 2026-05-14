@@ -11,11 +11,13 @@
 #include <algorithm>
 #include <chrono>
 #include <list>
+#include <memory>
 #include <string>
 
 #include <opencv2/opencv.hpp>
 #include <rclcpp/rclcpp.hpp>
 
+#include "io/hero_config_path.hpp"
 #include "io/hero_ros_board/hero_ros_board.hpp"
 #include "io/hero_ros_board/hero_ros_command_pub.hpp"
 #include "io/hero_ros_yaml_flags.hpp"
@@ -25,11 +27,16 @@
 #include "tasks/auto_aim/hero_solver.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/solver.hpp"
+#include "tasks/auto_aim/detector.hpp"
+#include "tasks/auto_aim/phoenix_tradition_detector.hpp"
 #include "tasks/auto_aim/tracker.hpp"
 #include "tasks/auto_aim/yolo.hpp"
 #include "tools/exiter.hpp"
+#include "tools/hero_armor_detect.hpp"
+#include "tools/hero_auto_aim_viz.hpp"
 #include "tools/logger.hpp"
 #include "tools/math_tools.hpp"
+#include "tools/plotter.hpp"
 
 namespace
 {
@@ -57,7 +64,9 @@ int main(int argc, char ** argv)
       "{help h usage ? | | 输出帮助}"
       "{config c | configs/hero.yaml | Hero 专用 YAML（可与 standard 对齐后按需改）}"
       "{topic t | /image_for_auto_aim | sensor_msgs/Image 话题}"
-      "{queue q | 3 | 图像队列深度（满则丢最旧）}";
+      "{queue q | 3 | 图像队列深度（满则丢最旧）}"
+      "{tradition t | false | Sc_vision 传统 Detector；yaml use_phoenix_traditional 为 true 时不走此分支}"
+      "{no_viz | false | 关闭 OpenCV 重投影窗口与 UDP plotter（无头/远程）}";
 
   cv::CommandLineParser cli(argc, argv, keys);
   if (cli.has("help")) {
@@ -65,13 +74,28 @@ int main(int argc, char ** argv)
     return 0;
   }
 
-  const std::string config_path = cli.get<std::string>("config");
+  const std::string config_path =
+      io::resolve_config_path_next_to_build(cli.get<std::string>("config"), argv[0]);
   const std::string image_topic = cli.get<std::string>("topic");
   const int queue_cap = std::max(1, cli.get<int>("queue"));
+  const bool tradition_cli = cli.get<bool>("tradition");
+  const bool no_viz = cli.get<bool>("no_viz");
+
+  const auto armor_yaml = tools::hero_load_armor_detect_yaml_flags(config_path);
+  const bool use_phoenix_traditional = armor_yaml.use_phoenix_traditional;
+  const bool tradition_visual = tools::hero_armor_tradition_visual_debug(
+      armor_yaml.debug_img, use_phoenix_traditional, tradition_cli);
 
   rclcpp::init(argc, argv);
 
   tools::Exiter exiter;
+  std::unique_ptr<tools::Plotter> plotter;
+  tools::HeroVizConfig vizcfg;
+  vizcfg.window = !no_viz;
+  vizcfg.plotter = !no_viz;
+  if (vizcfg.plotter) {
+    plotter = std::make_unique<tools::Plotter>();
+  }
   io::HeroRosBoard hero_board(config_path);
   io::HeroRosCommandPublisher hero_cmd_pub(config_path);
   io::ImageFromRos camera(
@@ -79,12 +103,22 @@ int main(int argc, char ** argv)
       static_cast<std::size_t>(queue_cap),
       io::yaml_hero_ros_suppress_rx_stall_log(config_path));
 
-  auto_aim::YOLO detector(config_path, false);
+  auto_aim::Detector legacy_detector(config_path, tradition_visual);
+  auto_aim::YOLO yolo(config_path, false);
+  auto_aim::PhoenixTraditionDetector phoenix_detector(
+      config_path,
+      tools::hero_phoenix_detector_impl_debug(tradition_visual, use_phoenix_traditional));
   auto_aim::Solver solver(config_path);
   auto_aim::HeroSolver hero_solver(config_path);
   auto_aim::Tracker tracker(config_path, solver);
   auto_aim::Planner planner(config_path);
   auto_aim::Aimer aimer(config_path);
+
+  tools::logger()->info(
+      "[hero] armor_detect: use_phoenix_traditional={} tradition_cli={} debug_img={}",
+      use_phoenix_traditional,
+      tradition_cli,
+      armor_yaml.debug_img);
 
   cv::Mat img;
   Eigen::Quaterniond q;
@@ -92,19 +126,26 @@ int main(int argc, char ** argv)
 
   int frame_count = 0;
 
-  while (!exiter.exit()) {
+  while (!exiter.exit() && rclcpp::ok()) {
     camera.read(img, t);
     q = hero_board.imu_at(t - std::chrono::milliseconds(1));
 
     hero_solver.set_board_orientation(q);
-    const io::HeroBoardParsed snap = hero_board.snapshot();
-    if (snap.has_sample) {
-      hero_solver.set_joint_pitch_rad(static_cast<double>(snap.vtx_pitch));
-    }
     hero_solver.apply_to_solver(solver);
 
-    const auto yolo_start = std::chrono::steady_clock::now();
-    auto armors = detector.detect(img, frame_count);
+    const auto detect_start = std::chrono::steady_clock::now();
+    auto armors = tools::hero_detect_armors_for_frame(
+        img,
+        frame_count,
+        armor_yaml,
+        use_phoenix_traditional,
+        tradition_cli,
+        phoenix_detector,
+        legacy_detector,
+        yolo);
+    if (tools::hero_armor_detect_using_yolo_path(use_phoenix_traditional, tradition_cli)) {
+      tools::hero_log_yolo_roi(yolo);
+    }
     prioritize_outpost(armors);
 
     const auto tracker_start = std::chrono::steady_clock::now();
@@ -136,7 +177,7 @@ int main(int argc, char ** argv)
       tools::logger()->info(
           "[hero] #{} target={} control={} shoot={} "
           "cmd_yaw={:.3f}deg cmd_pitch={:.3f}deg yaw_vel={:.3f} pitch_vel={:.3f} | "
-          "yolo {:.1f}ms tracker {:.1f}ms aimer {:.1f}ms | "
+          "detect {:.1f}ms tracker {:.1f}ms aimer {:.1f}ms | "
           "ekf x={:.3f} vx={:.3f} y={:.3f} vy={:.3f} z={:.3f} vz={:.3f} w={:.3f}",
           frame_count,
           auto_aim::ARMOR_NAMES[static_cast<int>(tg.name)],
@@ -146,7 +187,7 @@ int main(int argc, char ** argv)
           command.pitch * 57.3,
           command.yaw_vel,
           command.pitch_vel,
-          tools::delta_time(tracker_start, yolo_start) * 1e3,
+          tools::delta_time(tracker_start, detect_start) * 1e3,
           tools::delta_time(aimer_start, tracker_start) * 1e3,
           tools::delta_time(finish, aimer_start) * 1e3,
           x[0],
@@ -158,11 +199,24 @@ int main(int argc, char ** argv)
           x[7]);
     } else {
       tools::logger()->info(
-          "[hero] #{} no_track armors={} | yolo {:.1f}ms tracker {:.1f}ms",
+          "[hero] #{} no_track armors={} | detect {:.1f}ms tracker {:.1f}ms",
           frame_count,
           armors.size(),
-          tools::delta_time(tracker_start, yolo_start) * 1e3,
+          tools::delta_time(tracker_start, detect_start) * 1e3,
           tools::delta_time(aimer_start, tracker_start) * 1e3);
+    }
+
+    if (tools::hero_viz_auto_aim_frame(
+            img,
+            solver,
+            aimer,
+            armors,
+            targets,
+            cmd_out,
+            q,
+            plotter.get(),
+            vizcfg)) {
+      break;
     }
 
     frame_count++;

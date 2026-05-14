@@ -181,6 +181,7 @@ if(TARGET io_image_from_ros AND TARGET io_hero_ros_board AND ament_cmake_FOUND A
     foreach(
         _hero_t
         hero_detectwithpnp_test
+        hero_intrinsic_triangulation_test
         hero_observe_test
         hero_withoutboard_test
         hero_full_test)

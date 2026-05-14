@@ -41,6 +41,11 @@ private:
   double SJTU_cost(
     const std::vector<cv::Point2f> & cv_refs, const std::vector<cv::Point2f> & cv_pts,
     const double & inclined) const;
+
+  /** PnP 后沿云台系视线方向增加的距离（m），0 关闭 */
+  void apply_pnp_distance_offset(Eigen::Vector3d & xyz_in_gimbal) const;
+
+  double pnp_err_offset_{0.0};
 };
 
 }  // namespace auto_aim

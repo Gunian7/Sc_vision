@@ -2,6 +2,8 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include "tools/resolve_path_relative_to_config.hpp"
+
 namespace auto_aim
 {
 namespace multithread
@@ -12,7 +14,8 @@ MultiThreadDetector::MultiThreadDetector(const std::string & config_path, bool d
 {
   auto yaml = YAML::LoadFile(config_path);
   auto yolo_name = yaml["yolo_name"].as<std::string>();
-  auto model_path = yaml[yolo_name + "_model_path"].as<std::string>();
+  auto model_path = tools::resolve_path_relative_to_config(
+      config_path, yaml[yolo_name + "_model_path"].as<std::string>());
   device_ = yaml["device"].as<std::string>();
 
   auto model = core_.read_model(model_path);

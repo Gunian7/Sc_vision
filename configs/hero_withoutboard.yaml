@@ -4,8 +4,6 @@ enemy_color : "red"
 #####-----Hero 节点专用（src/hero.cpp / HeroRosBoard / HeroSolver）-----
 # 图像来自 ROS（默认话题见 hero -t）；姿态与弹速来自 communicate Autoaim。
 hero_autoaim_topic: "/communicate/autoaim"
-# 图传云台 pitch 关节绕轴（云台右手系单位向量，模长非 1 时会归一化）
-hero_joint_pitch_axis: [0.0, 1.0, 0.0]
 # true：不订阅 communicate，本地恒等姿态+auto_aim（无实机下位机）；false：正常订阅。亦可仅用 communicate 的 serial_enable:false 发假 Autoaim
 hero_board_simulate_no_mcu: true
 hero_ros_suppress_rx_stall_log: false
@@ -23,6 +21,17 @@ rp24_model_path: assets/rp24_0526.onnx
 device: CPU
 min_confidence: 0.7
 use_traditional: true
+# true：Phoenix 灯条传统检测（PhoenixTraditionDetector），优先级高于 --tradition
+use_phoenix_traditional: false
+# true 且走传统分支时：可显示二值化调试图（与 hero_detectwithpnp_test 一致）
+debug_img: false
+
+phoenix_tradition_detect:
+  binary_threshold_red: 60
+  binary_threshold_blue: 120
+  light_contour_threshold_red: 60
+  light_contour_threshold_blue: 130
+  dilate_kernel_size: 5
 
 #####-----ROI-----#####
 
@@ -141,6 +150,8 @@ distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.00154277647034395
 
 R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]
 t_camera2gimbal: [0.12, 0.07, 0.12]  #0.10 0.07 0.10
+# PnP 装甲中心距离修正（m），沿云台系视线；0 关闭
+pnp_err_offset: 0.0
 
 #####-----cboard参数-----#####
 quaternion_canid: 0x100

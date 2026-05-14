@@ -184,7 +184,14 @@ std::list<Target> Tracker::track(
     state_ = "lost";
   }
   // 过滤掉非我方装甲板
+  const std::size_t armors_before_color_filter = armors.size();
   armors.remove_if([&](const auto_aim::Armor & a) { return a.color != enemy_color_; });
+  const std::size_t armors_after_color_filter = armors.size();
+  if (armors_before_color_filter > 0 && armors_after_color_filter == 0) {
+    tools::logger()->warn(
+      "[Tracker] All armors filtered by color. enemy_color={} before={} after={}",
+      COLORS[enemy_color_], armors_before_color_filter, armors_after_color_filter);
+  }
 
   // 过滤前哨站顶部装甲板
   // armors.remove_if([this](const auto_aim::Armor & a) {
@@ -440,13 +447,34 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     target_.set_angular_velocity(forced_target_angular_velocity_);
   }
 
+  int name_mismatch_count = 0;
+  int type_mismatch_count = 0;
+  int candidate_count = 0;
+
   for (auto & armor : armors) {
-    if (armor.name != target_.name || armor.type != target_.armor_type) continue;
+    if (armor.name != target_.name) {
+      ++name_mismatch_count;
+      continue;
+    }
+    if (armor.type != target_.armor_type) {
+      ++type_mismatch_count;
+      continue;
+    }
+    ++candidate_count;
 
     solver_.solve(armor);
     target_.update(armor);
     update_motion_state(target_, t);
     return true;
+  }
+
+  if (!armors.empty()) {
+    tools::logger()->warn(
+      "[Tracker] No matched armor for target. target(name={}, type={}) armors={} "
+      "name_mismatch={} type_mismatch={} candidate={}",
+      ARMOR_NAMES[static_cast<int>(target_.name)],
+      ARMOR_TYPES[static_cast<int>(target_.armor_type)],
+      armors.size(), name_mismatch_count, type_mismatch_count, candidate_count);
   }
 
   update_motion_state(target_, t);

@@ -11,6 +11,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include "io/hero_config_path.hpp"
 #include "io/hero_ros_board/hero_ros_board.hpp"
 #include "tasks/auto_aim/hero_solver.hpp"
 #include "tools/exiter.hpp"
@@ -37,7 +38,8 @@ void print_rpy_line(const char* label, const Eigen::Vector3d& zyx_deg)
 
 int main(int argc, char** argv)
 {
-  const std::string config = (argc >= 2) ? argv[1] : "configs/hero.yaml";
+  const std::string config = io::resolve_config_path_next_to_build(
+      (argc >= 2) ? argv[1] : "configs/hero.yaml", argv[0]);
 
   rclcpp::init(argc, argv);
 
@@ -55,9 +57,6 @@ int main(int argc, char** argv)
     hero_solver.set_board_orientation(q);
 
     const io::HeroBoardParsed snap = hero_board.snapshot();
-    if (snap.has_sample) {
-      hero_solver.set_joint_pitch_rad(static_cast<double>(snap.vtx_pitch));
-    }
 
     const Eigen::Matrix3d R_g2w = hero_solver.R_gimbal2world();
     const Eigen::Matrix3d R_c2g = hero_solver.R_camera2gimbal_effective();
@@ -66,14 +65,13 @@ int main(int argc, char** argv)
 
     print_rpy_line("world (参考, 恒为 0)     ", Eigen::Vector3d::Zero());
     print_rpy_line("gimbal 相对 world         ", euler_zyx_intrinsic_deg(R_g2w));
-    print_rpy_line("camera 相对 gimbal(有效)  ", euler_zyx_intrinsic_deg(R_c2g));
+    print_rpy_line("camera 相对 gimbal(YAML)  ", euler_zyx_intrinsic_deg(R_c2g));
     print_rpy_line("camera 相对 world         ", euler_zyx_intrinsic_deg(R_c2w));
 
     std::cout << "cam_origin_world_m: " << T_w_c.translation().transpose()
               << " | v=" << hero_board.bullet_speed
               << " | board_raw_deg yaw=" << static_cast<double>(snap.high_gimbal_yaw) * kRad2Deg
-              << " pitch=" << static_cast<double>(snap.pitch) * kRad2Deg
-              << " vtx=" << static_cast<double>(snap.vtx_pitch) * kRad2Deg << "\n";
+              << " pitch=" << static_cast<double>(snap.pitch) * kRad2Deg << "\n";
     std::cout << "---\n";
 
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

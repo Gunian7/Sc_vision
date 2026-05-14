@@ -8,6 +8,7 @@
 
 #include "tools/img_tools.hpp"
 #include "tools/logger.hpp"
+#include "tools/resolve_path_relative_to_config.hpp"
 
 namespace auto_aim
 {
@@ -21,9 +22,11 @@ YOLOV5::YOLOV5(const std::string & config_path, bool debug)
     if (!yaml["rp24_model_path"].IsDefined()) {
       throw std::runtime_error("yolo_name=rp24 but rp24_model_path is not defined in yaml");
     }
-    model_path_ = yaml["rp24_model_path"].as<std::string>();
+    model_path_ = tools::resolve_path_relative_to_config(
+        config_path, yaml["rp24_model_path"].as<std::string>());
   } else {
-    model_path_ = yaml["yolov5_model_path"].as<std::string>();
+    model_path_ = tools::resolve_path_relative_to_config(
+        config_path, yaml["yolov5_model_path"].as<std::string>());
   }
   device_ = yaml["device"].as<std::string>();
   binary_threshold_ = yaml["threshold"].as<double>();

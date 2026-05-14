@@ -2,6 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <limits>
 #include <vector>
 
 #include "tools/logger.hpp"
@@ -35,6 +36,10 @@ Solver::Solver(const std::string & config_path) : R_gimbal2world_(Eigen::Matrix3
   R_camera2gimbal_ = Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
   t_camera2gimbal_ = Eigen::Matrix<double, 3, 1>(t_camera2gimbal_data.data());
 
+  if (yaml["pnp_err_offset"].IsDefined()) {
+    pnp_err_offset_ = yaml["pnp_err_offset"].as<double>();
+  }
+
   auto camera_matrix_data = yaml["camera_matrix"].as<std::vector<double>>();
   auto distort_coeffs_data = yaml["distort_coeffs"].as<std::vector<double>>();
   Eigen::Matrix<double, 3, 3, Eigen::RowMajor> camera_matrix(camera_matrix_data.data());
@@ -54,6 +59,22 @@ void Solver::set_R_gimbal2world(const Eigen::Quaterniond & q)
   R_gimbal2world_ = R_gimbal2imubody_.transpose() * R_imubody2imuabs * R_gimbal2imubody_;
 }
 
+void Solver::apply_pnp_distance_offset(Eigen::Vector3d & xyz_in_gimbal) const
+{
+  if (pnp_err_offset_ == 0.0) {
+    return;
+  }
+  const double n = xyz_in_gimbal.norm();
+  if (n <= 1e-9) {
+    return;
+  }
+  const double n2 = n + pnp_err_offset_;
+  if (n2 <= 1e-9) {
+    return;
+  }
+  xyz_in_gimbal *= n2 / n;
+}
+
 //solvePnP（获得姿态）
 void Solver::solve(Armor & armor) const
 {
@@ -68,6 +89,7 @@ void Solver::solve(Armor & armor) const
   Eigen::Vector3d xyz_in_camera;
   cv::cv2eigen(tvec, xyz_in_camera);
   armor.xyz_in_gimbal = R_camera2gimbal_ * xyz_in_camera + t_camera2gimbal_;
+  apply_pnp_distance_offset(armor.xyz_in_gimbal);
   armor.xyz_in_world = R_gimbal2world_ * armor.xyz_in_gimbal;
 
   cv::Mat rmat;
@@ -82,10 +104,10 @@ void Solver::solve(Armor & armor) const
   armor.ypd_in_world = tools::xyz2ypd(armor.xyz_in_world);
 
   // 平衡不做yaw优化，因为pitch假设不成立
-  auto is_balance = (armor.type == ArmorType::big) &&
-                    (armor.name == ArmorName::three || armor.name == ArmorName::four ||
-                     armor.name == ArmorName::five);
-  if (is_balance) return;
+  if (armor_is_balance_station_big(armor)) {
+    armor.yaw_raw = std::numeric_limits<double>::quiet_NaN();
+    return;
+  }
 
   optimize_yaw(armor);
 }
@@ -145,6 +167,7 @@ double Solver::oupost_reprojection_error(Armor armor, const double & pitch)
   Eigen::Vector3d xyz_in_camera;
   cv::cv2eigen(tvec, xyz_in_camera);
   armor.xyz_in_gimbal = R_camera2gimbal_ * xyz_in_camera + t_camera2gimbal_;
+  apply_pnp_distance_offset(armor.xyz_in_gimbal);
   armor.xyz_in_world = R_gimbal2world_ * armor.xyz_in_gimbal;
 
   cv::Mat rmat;

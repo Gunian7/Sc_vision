@@ -120,6 +120,13 @@ struct Armor
     std::vector<cv::Point2f> armor_keypoints, cv::Point2f offset);
 };
 
+/** 与 Solver::solve 一致：平衡入口大装甲不做 yaw 优化，yaw_raw 无定义（solve 中会写 NaN） */
+inline bool armor_is_balance_station_big(const Armor & a)
+{
+  return (a.type == ArmorType::big) &&
+         (a.name == ArmorName::three || a.name == ArmorName::four || a.name == ArmorName::five);
+}
+
 }  // namespace auto_aim
 
 #endif  // AUTO_AIM__ARMOR_HPP

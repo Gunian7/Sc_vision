@@ -19,16 +19,7 @@ hero_coord::HeroCoordinateFrames load_coordinate_frames(const std::string& confi
     Eigen::Matrix<double, 3, 3, Eigen::RowMajor>(R_camera2gimbal_data.data());
   const Eigen::Vector3d t_camera2gimbal(t_camera2gimbal_data.data());
 
-  Eigen::Vector3d joint_axis(0., 1., 0.);
-  if (yaml["hero_joint_pitch_axis"].IsDefined()) {
-    auto ax = yaml["hero_joint_pitch_axis"].as<std::vector<double>>();
-    if (ax.size() >= 3) {
-      joint_axis << ax[0], ax[1], ax[2];
-    }
-  }
-
-  return hero_coord::HeroCoordinateFrames(
-    R_gimbal2imubody, R_camera2gimbal, t_camera2gimbal, joint_axis);
+  return hero_coord::HeroCoordinateFrames(R_gimbal2imubody, R_camera2gimbal, t_camera2gimbal);
 }
 
 } // namespace
@@ -42,12 +33,6 @@ void HeroSolver::set_board_orientation(const Eigen::Quaterniond& q)
 {
   q_board_ = q.normalized();
   frames_.set_imu_quaternion(q_board_);
-}
-
-void HeroSolver::set_joint_pitch_rad(double rad)
-{
-  joint_pitch_rad_ = rad;
-  frames_.set_joint_pitch_rad(rad);
 }
 
 Eigen::Isometry3d HeroSolver::lookup_transform(std::string_view target, std::string_view source) const

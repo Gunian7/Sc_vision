@@ -10,6 +10,7 @@ add_library(auto_aim OBJECT
     armor.cpp
     classifier.cpp 
     detector.cpp
+    phoenix_tradition_detector.cpp
     solver.cpp
     imm.cpp
     aimer.cpp

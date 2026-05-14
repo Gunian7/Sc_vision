@@ -23,7 +23,6 @@ struct HeroBoardParsed
   rclcpp::Time ros_stamp{};
   float high_gimbal_yaw{0.F};
   float pitch{0.F};
-  float vtx_pitch{0.F};
   uint8_t enemy_team_color{0};
   uint8_t mode_u8{0};
   uint8_t rune_flag{0};

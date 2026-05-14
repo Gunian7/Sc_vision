@@ -34,7 +34,7 @@ ImageFromRos::ImageFromRos(std::string topic, std::size_t queue_capacity, bool s
 
   sub_ = node_->create_subscription<sensor_msgs::msg::Image>(
       topic_,
-      rclcpp::SensorDataQoS(),
+      rclcpp::SensorDataQoS().keep_last(2),
       [this](sensor_msgs::msg::Image::SharedPtr msg) { on_image(std::move(msg)); });
 
   executor_.add_node(node_);
@@ -55,6 +55,7 @@ ImageFromRos::ImageFromRos(std::string topic, std::size_t queue_capacity, bool s
 ImageFromRos::~ImageFromRos()
 {
   quit_.store(true);
+  executor_.cancel();
   if (spin_thread_.joinable()) {
     spin_thread_.join();
   }
@@ -84,12 +85,13 @@ void ImageFromRos::on_image(const sensor_msgs::msg::Image::SharedPtr msg)
   }
 
   CameraData data;
-  data.img       = cv_ptr->image.clone();
-  data.timestamp = std::chrono::steady_clock::now();
+  data.img = cv_ptr->image.clone();
+  const auto rx_ts = std::chrono::steady_clock::now();
+  data.timestamp = rx_ts;
   queue_.push(std::move(data));
   {
     std::lock_guard<std::mutex> lock(stall_mtx_);
-    last_good_rx_ = data.timestamp;
+    last_good_rx_ = rx_ts;
   }
 }
 
@@ -119,9 +121,11 @@ void ImageFromRos::maybe_warn_rx_stall()
 
 void ImageFromRos::spin_loop()
 {
+  // spin_some + yield 易忙等占满 CPU，加剧调度抖动；spin_once 在 DDS 上阻塞等待，收包更稳。
+  constexpr auto k_wait = std::chrono::milliseconds(100);
   while (!quit_.load()) {
     if (rclcpp::ok()) {
-      executor_.spin_some();
+      executor_.spin_once(k_wait);
     }
     bool tick_watchdog = false;
     {
@@ -135,7 +139,6 @@ void ImageFromRos::spin_loop()
     if (tick_watchdog) {
       maybe_warn_rx_stall();
     }
-    std::this_thread::sleep_for(500us);
   }
 }
 

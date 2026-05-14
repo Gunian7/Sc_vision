@@ -75,7 +75,6 @@ HeroRosBoard::HeroRosBoard(const std::string &config_path)
       last_parsed_.has_sample = true;
       last_parsed_.high_gimbal_yaw = 0.F;
       last_parsed_.pitch = 0.F;
-      last_parsed_.vtx_pitch = 0.F;
       last_parsed_.low_gimbal_yaw = static_cast<float>(default_bullet_speed_);
       last_parsed_.bullet_speed = default_bullet_speed_;
       last_parsed_.gimbal_q = Eigen::Quaterniond::Identity();
@@ -107,9 +106,9 @@ HeroRosBoard::HeroRosBoard(const std::string &config_path)
   }
 
   node_ = std::make_shared<rclcpp::Node>("hero_ros_board");
-  sub_ = node_->create_subscription<communicate_26::msg::Autoaim>(
+  sub_ = node_->create_subscription<hero_interfaces::msg::Autoaim>(
       autoaim_topic_, rclcpp::SensorDataQoS(),
-      [this](communicate_26::msg::Autoaim::SharedPtr m) { on_autoaim(std::move(m)); });
+      [this](hero_interfaces::msg::Autoaim::SharedPtr m) { on_autoaim(std::move(m)); });
 
   executor_.add_node(node_);
   spin_thread_ = std::thread([this] { spin_loop(); });
@@ -152,7 +151,7 @@ void HeroRosBoard::spin_loop()
     {
       maybe_warn_autoaim_rx_stall();
     }
-    std::this_thread::sleep_for(500us);
+    std::this_thread::yield();
   }
 }
 
@@ -210,7 +209,7 @@ void HeroRosBoard::simulate_no_mcu_loop()
   }
 }
 
-void HeroRosBoard::on_autoaim(const communicate_26::msg::Autoaim::SharedPtr msg)
+void HeroRosBoard::on_autoaim(const hero_interfaces::msg::Autoaim::SharedPtr msg)
 {
   if (!msg)
   {
@@ -280,7 +279,6 @@ void HeroRosBoard::on_autoaim(const communicate_26::msg::Autoaim::SharedPtr msg)
     last_parsed_.ros_stamp = rclcpp::Time(msg->header.stamp);
     last_parsed_.high_gimbal_yaw = msg->high_gimbal_yaw;
     last_parsed_.pitch = msg->pitch;
-    last_parsed_.vtx_pitch = msg->vtx_pitch;
     last_parsed_.enemy_team_color = msg->enemy_team_color;
     last_parsed_.mode_u8 = msg->mode;
     last_parsed_.rune_flag = msg->rune_flag;
@@ -297,8 +295,8 @@ void HeroRosBoard::on_autoaim(const communicate_26::msg::Autoaim::SharedPtr msg)
     if (dt > 0.5)
     {
       RCLCPP_INFO(node_ ? node_->get_logger() : rclcpp::get_logger("hero_ros_board"),
-                  "raw(yaw=%.3f, pitch=%.3f, vtx=%.3f, v=%.3f) unit=%s | mode=%s", raw_yaw, raw_pitch,
-                  static_cast<double>(msg->vtx_pitch), raw_v, phoenix_angles_in_degrees_ ? "deg" : "rad",
+                  "raw(yaw=%.3f, pitch=%.3f, v=%.3f) unit=%s | mode=%s", raw_yaw, raw_pitch,
+                  raw_v, phoenix_angles_in_degrees_ ? "deg" : "rad",
                   MODES[mode].c_str());
       last_debug_log_time_ = steady_now;
     }
