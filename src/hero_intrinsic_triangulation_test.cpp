@@ -204,7 +204,7 @@ int main(int argc, char ** argv)
         phoenix_detector,
         detector,
         yolo);
-    if (tools::hero_armor_detect_using_yolo_path(use_phoenix_traditional, use_tradition)) {
+    if (tools::hero_armor_detect_using_yolo_path(armor_yaml, use_phoenix_traditional, use_tradition)) {
       tools::hero_log_yolo_roi(yolo);
     }
 

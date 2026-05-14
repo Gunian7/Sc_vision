@@ -140,7 +140,7 @@ int main(int argc, char** argv)
         phoenix_detector,
         legacy_detector,
         yolo);
-    if (tools::hero_armor_detect_using_yolo_path(use_phoenix_traditional, tradition_cli)) {
+    if (tools::hero_armor_detect_using_yolo_path(armor_yaml, use_phoenix_traditional, tradition_cli)) {
       tools::hero_log_yolo_roi(yolo);
     }
     prioritize_outpost(armors);

@@ -2,6 +2,7 @@
 
 #include <yaml-cpp/yaml.h>
 
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -75,8 +76,8 @@ void Solver::apply_pnp_distance_offset(Eigen::Vector3d & xyz_in_gimbal) const
   xyz_in_gimbal *= n2 / n;
 }
 
-//solvePnP（获得姿态）
-void Solver::solve(Armor & armor) const
+//solvePnP（获得姿态）；角点来自 armor.points
+void Solver::solve_geometry(Armor & armor) const
 {
   const auto & object_points =
     (armor.type == ArmorType::big) ? BIG_ARMOR_POINTS : SMALL_ARMOR_POINTS;
@@ -110,6 +111,11 @@ void Solver::solve(Armor & armor) const
   }
 
   optimize_yaw(armor);
+}
+
+void Solver::solve(Armor & armor) const
+{
+  solve_geometry(armor);
 }
 
 // world坐标系下重投影装甲板四个顶点到图像平面

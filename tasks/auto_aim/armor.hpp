@@ -64,6 +64,17 @@ const std::vector<std::tuple<Color, ArmorName, ArmorType>> armor_properties = {
   {blue, five, big},         {red, five, big},         {extinguish, five, big}};
 // clang-format on
 
+inline int armor_class_id_from_properties(Color color, ArmorName name, ArmorType type)
+{
+  for (std::size_t i = 0; i < armor_properties.size(); ++i) {
+    const auto & p = armor_properties[i];
+    if (std::get<0>(p) == color && std::get<1>(p) == name && std::get<2>(p) == type) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
 struct Lightbar
 {
   std::size_t id;

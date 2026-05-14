@@ -146,7 +146,7 @@ find_package(${HERO_MSGS_PACKAGE} QUIET)
 # Hero：ROS 图像 + HeroRosBoard；hero_tf_test / hero_ros_test 依赖自定义消息包 + rclcpp
 if(TARGET io_hero_ros_board AND ament_cmake_FOUND AND rclcpp_FOUND AND ${HERO_MSGS_PACKAGE}_FOUND)
     add_executable(hero_tf_test src/hero_tf_test.cpp)
-    target_link_libraries(hero_tf_test hero_solver_core io_hero_ros_board tools)
+    target_link_libraries(hero_tf_test hero_solver_core io_hero_ros_board tools ${OpenCV_LIBS})
     ament_target_dependencies(hero_tf_test rclcpp ${HERO_MSGS_PACKAGE})
 
     add_executable(hero_ros_test src/hero_ros_test.cpp)

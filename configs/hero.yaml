@@ -5,7 +5,7 @@ enemy_color: "blue"
 # 图像来自 ROS（默认话题见 hero -t）；姿态与弹速来自 communicate Autoaim。
 hero_autoaim_topic: "/communicate/autoaim"
 # true：不订阅 communicate，本地恒等姿态+auto_aim（无实机下位机）；false：正常订阅。亦可仅用 communicate 的 serial_enable:false 发假 Autoaim
-hero_board_simulate_no_mcu: true
+hero_board_simulate_no_mcu: false
 # true：关闭 ROS 图像 / Autoaim 「长时间未收到数据」的告警日志（故意阻塞 read、低速抽帧降开销时用）
 hero_ros_suppress_rx_stall_log: false
 # true：向 hero_link_node 入口发布 SerialInfo（默认 /communicate/vision_shoot_serial，须与包 hero_common 内 hero_link.yaml（源码 hero_common/hero_common/config）中 vision_serial_topic 一致）；由 hero_link_node mux 后发到 communicate /shoot_info，勿直连 shoot_info
@@ -14,7 +14,7 @@ hero_command_topic: "/communicate/vision_shoot_serial"
 # phoenix_angle_unit / imu_* / cboard_debug_log：HeroRosBoard 与串口 CBoard 共用同一套键名
 
 #####-----神经网络参数-----#####
-yolo_name: yolo11
+yolo_name: yolov5
 classify_model: assets/tiny_resnet.onnx
 yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
@@ -24,7 +24,7 @@ device: CPU
 min_confidence: 0.7
 use_traditional: false
 # true：使用 armor_detector 风格灯条检测（PhoenixTraditionDetector），优先级高于 --tradition
-use_phoenix_traditional: true
+use_phoenix_traditional: false
 # true 且实际走传统检测时：hero_detectwithpnp_test 中 imshow 二值化/调试图（binary_img、phoenix_*_binary、threshold 等）
 debug_img: false
 
@@ -50,8 +50,8 @@ phoenix_tradition_detect:
   # 是否启用“中间夹灯条即拒绝”规则
   enable_contain_light_filter: true
   # 可视化分阶段开关
-  viz_show_gray_binary: false
-  viz_show_light_binary: false
+  viz_show_gray_binary: true
+  viz_show_light_binary: true
   viz_show_light_boxes: true
   viz_show_accepted_armors: true
   viz_show_suspicious_armors: true
@@ -88,7 +88,7 @@ roi:
   width: 640
   height: 640
 
-use_roi: false
+use_roi: true
 
 dynamic_roi: false
 dynamic_roi_shrink_frames: 2
@@ -107,11 +107,11 @@ max_rectangular_error: 25 # degree
 
 #####-----tracker参数-----#####
 min_detect_count: 5
-max_temp_lost_count: 15
+max_temp_lost_count: 10
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
-outpost_leaving_angle: 70 # degree 前哨站离开视野角度
+outpost_leaving_angle: 30 # degree 前哨站离开视野角度
 # 前哨 temp_lost 最大容忍帧数；过小则略丢检即 lost（传统灯条比 YOLO 更易闪断）。其它车型 yaml 多为 75。
-outpost_max_temp_lost_count: 3
+outpost_max_temp_lost_count: 10
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
 jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
@@ -138,19 +138,22 @@ imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 200.0  #400
-target_process_noise_linear_outpost: 100.0
-target_process_noise_angular_outpost: 100.0
+target_process_noise_linear_outpost: 10.0
+target_process_noise_angular_outpost: 0.1
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
-target_measurement_noise_yaw: 0.02    #0.002
-target_measurement_noise_pitch: 0.02
+target_measurement_noise_yaw: 0.002    #0.002
+target_measurement_noise_pitch: 0.002
+# 目标匹配门控阈值（马氏距离平方 d^2）
+target_match_gate_tracked: 12.0
+target_match_gate_init: 24.0
 force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），会把
 forced_target_angular_velocity: 2.51 # rad/s
 
 #####-----aimer参数-----#####
 yaw_offset: 0.075   # 增大向左，反之向右
 pitch_offset: -1.0 # 增大向上 反之向下
-comming_angle: 15 # degree 55
-leaving_angle: 10 # degree 20
+comming_angle: 55 # degree 55
+leaving_angle: 20 # degree 20
 comming_angle_high: 30 # degree 高速(角速度大)使用
 leaving_angle_high: 5 # degree 高速(角速度大)使用
 comming_end_angle: 5 # degree 极高速下的最小角度

@@ -6,6 +6,7 @@
 #include <limits>
 #include <utility>
 #include <string>
+#include <vector>
 
 #include <opencv2/opencv.hpp>
 #include <yaml-cpp/yaml.h>
@@ -248,7 +249,8 @@ inline std::list<auto_aim::Armor> hero_detect_armors_for_frame(
   return yolo.detect(img, frame_count);
 }
 
-inline bool hero_armor_detect_using_yolo_path(bool use_phoenix_traditional, bool tradition_cli)
+inline bool hero_armor_detect_using_yolo_path(
+  [[maybe_unused]] const HeroArmorDetectYamlFlags & cfg, bool use_phoenix_traditional, bool tradition_cli)
 {
   return !use_phoenix_traditional && !tradition_cli;
 }

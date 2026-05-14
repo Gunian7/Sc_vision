@@ -8,7 +8,6 @@
  *   ./build/hero_detectwithpnp_test configs/hero.yaml
  *   ./build/hero_detectwithpnp_test configs/hero.yaml --tradition=true --ros_topic=/image_for_auto_aim
  * Phoenix 传统检测仅由 yaml 根键 use_phoenix_traditional 控制，无 CLI 覆盖。
- * 传统路径（Phoenix 或 --tradition）下 yaml 根键 debug_img:true 可显示二值化调试图（imshow）。
  * Plotter：与 tests/camera_track_test 相同，从 yaml 读取 plotter_host / plotter_port（缺省 10.2.20.200:9870），
  *   每帧 UDP 发送 armor_num 与首块装甲位姿；--no_plotter=true 可关闭。
  *
@@ -124,14 +123,14 @@ int main(int argc, char** argv)
     armors = tools::hero_detect_armors_for_frame(
         img, -1, armor_yaml, use_phoenix_traditional, use_tradition, phoenix_detector, detector, yolo);
 
-    if (tools::hero_armor_detect_using_yolo_path(use_phoenix_traditional, use_tradition)) {
+    if (tools::hero_armor_detect_using_yolo_path(armor_yaml, use_phoenix_traditional, use_tradition)) {
       tools::hero_log_yolo_roi(yolo);
     }
 
     solver.set_R_gimbal2world(identity_q);
 
     cv::Mat pnp_viz = img.clone();
-    if (tools::hero_armor_detect_using_yolo_path(use_phoenix_traditional, use_tradition)) {
+    if (tools::hero_armor_detect_using_yolo_path(armor_yaml, use_phoenix_traditional, use_tradition)) {
       tools::hero_draw_yolo_roi_overlay(pnp_viz, yolo);
     }
     if (!armors.empty()) {
@@ -151,8 +150,10 @@ int main(int argc, char** argv)
           tools::draw_text(
               pnp_viz,
               fmt::format(
-                  "{} {:.2f}m", auto_aim::ARMOR_NAMES[static_cast<int>(a.name)].c_str(),
-                  a.xyz_in_gimbal.norm()),
+                  "{} d={:.2f}m z={:.2f}m",
+                  auto_aim::ARMOR_NAMES[static_cast<int>(a.name)].c_str(),
+                  a.xyz_in_gimbal.norm(),
+                  a.xyz_in_world[2]),
               {std::max(4, static_cast<int>(c.x) - 30), std::max(16, static_cast<int>(c.y) - 10)},
               {255, 255, 255},
               0.55,
@@ -170,6 +171,7 @@ int main(int argc, char** argv)
         const auto& armor = armors.front();
         data["armor_x"] = armor.xyz_in_world[0];
         data["armor_y"] = armor.xyz_in_world[1];
+        data["armor_z"] = armor.xyz_in_world[2];
         data["armor_yaw"] = armor.ypr_in_world[0] * 57.3;
         if (std::isnan(armor.yaw_raw)) {
           data["armor_yaw_raw"] = nullptr;

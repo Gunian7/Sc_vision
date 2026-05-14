@@ -36,6 +36,7 @@ private:
   Eigen::Matrix3d R_gimbal2world_;
 
   void optimize_yaw(Armor & armor) const;
+  void solve_geometry(Armor & armor) const;
 
   double armor_reprojection_error(const Armor & armor, double yaw, const double & inclined) const;
   double SJTU_cost(

@@ -631,6 +631,11 @@ std::list<Armor> PhoenixTraditionDetector::detect(
         continue;
       }
 
+      // 对齐神经网络输出：补齐 class_id 与 box 字段，便于下游统一解析。
+      armor.class_id = armor_class_id_from_properties(armor.color, armor.name, armor.type);
+      if (armor.points.size() == 4) {
+        armor.box = cv::boundingRect(armor.points);
+      }
       armor.center_norm = {
         armor.center.x / std::max(1, bgr_img.cols), armor.center.y / std::max(1, bgr_img.rows)};
 

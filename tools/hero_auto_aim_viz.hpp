@@ -50,7 +50,8 @@ inline bool hero_viz_auto_aim_frame(
   const io::Command & command,
   const Eigen::Quaterniond & gimbal_q,
   Plotter * plotter,
-  const HeroVizConfig & cfg)
+  const HeroVizConfig & cfg,
+  const std::string & tracker_state = "")
 {
   const bool need_draw = cfg.window || (cfg.plotter && plotter != nullptr);
   if (!need_draw) {
@@ -79,6 +80,15 @@ inline bool hero_viz_auto_aim_frame(
       fmt::format("gimbal yaw{:.2f}", yaw * 57.3),
       {10, 90},
       {255, 255, 255});
+    if (!tracker_state.empty()) {
+      tools::draw_text(
+        img,
+        fmt::format("tracker state: {}", tracker_state),
+        {10, 118},
+        {180, 255, 180},
+        0.5,
+        2);
+    }
 
     // 检测框：与 Detector::show_result 一致写出装甲名 + 大小类型（EKF 绿框在上层绘制）
     std::string detect_summary = "detect:";
@@ -120,14 +130,49 @@ inline bool hero_viz_auto_aim_frame(
       if (armors.size() > 6U) {
         detect_summary += fmt::format(",+{}", armors.size() - 6U);
       }
-      tools::draw_text(img, detect_summary, {10, 118}, {180, 220, 255}, 0.45, 1);
+      tools::draw_text(img, detect_summary, {10, 138}, {180, 220, 255}, 0.45, 1);
     }
   }
 
   nlohmann::json data;
   data["armor_num"] = armors.size();
+  data["armors"] = nlohmann::json::array();
+  for (const auto & armor : armors) {
+    nlohmann::json a;
+    a["name"] = auto_aim::ARMOR_NAMES[static_cast<int>(armor.name)];
+    a["type"] = auto_aim::ARMOR_TYPES[static_cast<int>(armor.type)];
+    a["color"] = auto_aim::COLORS[static_cast<int>(armor.color)];
+    a["class_id"] = armor.class_id;
+    a["priority"] = static_cast<int>(armor.priority);
+    a["confidence"] = armor.confidence;
+
+    a["xyz_world"] = {armor.xyz_in_world[0], armor.xyz_in_world[1], armor.xyz_in_world[2]};
+    a["xyz_gimbal"] = {armor.xyz_in_gimbal[0], armor.xyz_in_gimbal[1], armor.xyz_in_gimbal[2]};
+    a["ypr_world_deg"] = {
+      armor.ypr_in_world[0] * 57.3, armor.ypr_in_world[1] * 57.3, armor.ypr_in_world[2] * 57.3};
+    a["ypd_world"] = {armor.ypd_in_world[0], armor.ypd_in_world[1], armor.ypd_in_world[2]};
+    a["ypd_world_deg"] = {armor.ypd_in_world[0] * 57.3, armor.ypd_in_world[1] * 57.3};
+
+    if (std::isnan(armor.yaw_raw)) {
+      a["yaw_raw_deg"] = nullptr;
+    } else {
+      a["yaw_raw_deg"] = armor.yaw_raw * 57.3;
+    }
+
+    a["center_px"] = {armor.center.x, armor.center.y};
+    a["center_norm"] = {armor.center_norm.x, armor.center_norm.y};
+    a["box_xywh"] = {armor.box.x, armor.box.y, armor.box.width, armor.box.height};
+
+    a["points_px"] = nlohmann::json::array();
+    for (const auto & p : armor.points) {
+      a["points_px"].push_back({p.x, p.y});
+    }
+    data["armors"].push_back(std::move(a));
+  }
+
   if (!armors.empty()) {
     const auto & armor = armors.front();
+    // 保留历史单目标字段，兼容旧版 plotter 面板。
     data["armor_name"] = auto_aim::ARMOR_NAMES[static_cast<int>(armor.name)];
     data["armor_type"] = auto_aim::ARMOR_TYPES[static_cast<int>(armor.type)];
     data["armor_x"] = armor.xyz_in_world[0];

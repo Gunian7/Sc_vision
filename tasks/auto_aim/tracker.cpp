@@ -14,6 +14,17 @@ namespace auto_aim
 {
 namespace
 {
+constexpr double k_max_filter_input_armor_yaw_abs = 26.0 / 57.3;
+
+void clamp_armor_input_yaw_for_filter(Armor & armor)
+{
+  if (!std::isfinite(armor.ypr_in_world[0])) {
+    return;
+  }
+  const double yaw = tools::limit_rad(armor.ypr_in_world[0]);
+  armor.ypr_in_world[0] = std::clamp(yaw, -k_max_filter_input_armor_yaw_abs, k_max_filter_input_armor_yaw_abs);
+}
+
 bool should_mark_bad_converge(const Target & target)
 {
   const auto & ekf = target.ekf();
@@ -426,6 +437,7 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
 
   auto & armor = armors.front();
   solver_.solve(armor);
+  clamp_armor_input_yaw_for_filter(armor);
 
   // 根据兵种优化初始化参数
   // 这个逻辑过时了记得改
@@ -503,6 +515,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     ++candidate_count;
 
     solver_.solve(armor);
+    clamp_armor_input_yaw_for_filter(armor);
     candidates.push_back(armor);
   }
 
