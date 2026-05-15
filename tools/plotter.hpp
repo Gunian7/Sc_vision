@@ -12,13 +12,17 @@ namespace tools
 class Plotter
 {
 public:
-  Plotter(std::string host = "10.2.20.200", uint16_t port = 9870);
+  Plotter();
+  explicit Plotter(const std::string & config_path);
+  Plotter(const std::string & host, uint16_t port);
 
   ~Plotter();
 
   void plot(const nlohmann::json & json);
 
 private:
+  void init_destination(const std::string & host, uint16_t port);
+
   int socket_;
   sockaddr_in destination_;
   std::mutex mutex_;

@@ -370,7 +370,7 @@ int main(int argc, char* argv[]) {
 
         plotter.plot(data);
 
-        cv::resize(img, img, {}, 0.9, 0.9);
+        cv::resize(img, img, {}, 1.0, 1.0);
         cv::imshow("reprojection", img);
         auto key = cv::waitKey(1);
         if (key == 'q')

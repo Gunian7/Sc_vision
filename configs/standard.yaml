@@ -42,7 +42,7 @@ min_detect_count: 5
 max_temp_lost_count: 15
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
 outpost_leaving_angle: 30 # degree 前哨站离开视野角度
-outpost_max_temp_lost_count: 75
+outpost_max_temp_lost_count: 15
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
 jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
@@ -68,7 +68,7 @@ imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
 imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100
-target_process_noise_angular_normal: 200.0  #400
+target_process_noise_angular_normal: 100.0  #400
 target_process_noise_linear_outpost: 10.0
 target_process_noise_angular_outpost: 10.0
 # 目标测量噪声 (R越大，越依赖预测值，更平滑，但是会更加滞后)
@@ -127,8 +127,9 @@ vid_pid: "f622:0001"
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
 # 重投影误差: 0.1820px
-camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
+# CHY
+camera_matrix: [1567.7907457705167, 0.0, 662.3933648922284, 0.0, 1564.9113082257936, 536.8662848443158, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.0682737005569565, 0.1983544402464456, 0.0016855914452479342, 0.0024125119646311016, 0.0]
 
 
 R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]

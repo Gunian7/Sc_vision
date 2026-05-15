@@ -238,6 +238,7 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
   std::vector<double> effective_delta_angle_list;
   delta_angle_list.reserve(armor_num);
   effective_delta_angle_list.reserve(armor_num);
+
   for (std::size_t i = 0; i < armor_num; i++) {
     auto delta_angle = tools::limit_rad(armor_xyza_list[i][3] - center_yaw);
     delta_angle_list.emplace_back(delta_angle);
