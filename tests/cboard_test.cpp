@@ -36,7 +36,9 @@ int main(int argc, char * argv[])
 
     Eigen::Vector3d eulers = tools::eulers(q, 2, 1, 0) * 57.3;
     tools::logger()->info("z{:.2f} y{:.2f} x{:.2f} degree", eulers[0], eulers[1], eulers[2]);
-    tools::logger()->info("bullet speed {:.2f} m/s", cboard.bullet_speed);
+    tools::logger()->info(
+        "bullet speed {:.2f} m/s | yaw_vel {:.3f} | pitch_vel {:.3f}",
+        cboard.bullet_speed, cboard.yaw_vel, cboard.pitch_vel);
   }
 
   return 0;

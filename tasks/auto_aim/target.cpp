@@ -285,12 +285,55 @@ bool Target::match_and_update(const std::vector<Armor> & armors)
 
 int Target::match_armor_id(const Armor & armor, double * best_d2) const
 {
+  const bool use_outpost_z_match =
+    (name == ArmorName::outpost && armor_num_ == 3 && height_init_done_);
+
+  if (!use_outpost_z_match) {
+    const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
+
+    std::vector<std::pair<Eigen::Vector4d, int>> xyza_i_list;
+    xyza_i_list.reserve(armor_num_);
+    for (int i = 0; i < armor_num_; ++i) {
+      xyza_i_list.push_back({xyza_list[i], i});
+    }
+
+    std::sort(
+      xyza_i_list.begin(), xyza_i_list.end(),
+      [](const std::pair<Eigen::Vector4d, int> & a, const std::pair<Eigen::Vector4d, int> & b) {
+        Eigen::Vector3d ypd1 = tools::xyz2ypd(a.first.head(3));
+        Eigen::Vector3d ypd2 = tools::xyz2ypd(b.first.head(3));
+        return ypd1[2] < ypd2[2];
+      });
+
+    int best_id = -1;
+    double min_score = std::numeric_limits<double>::infinity();
+    const int candidate_count = std::min<int>(3, static_cast<int>(xyza_i_list.size()));
+
+    for (int i = 0; i < candidate_count; ++i) {
+      const auto & xyza = xyza_i_list[i].first;
+      Eigen::Vector3d ypd = tools::xyz2ypd(xyza.head(3));
+      const double angle_error =
+        std::abs(tools::limit_rad(armor.ypr_in_world[0] - xyza[3])) +
+        std::abs(tools::limit_rad(armor.ypd_in_world[0] - ypd[0]));
+      const double score = angle_error * angle_error;
+
+      if (score < min_score) {
+        min_score = score;
+        best_id = xyza_i_list[i].second;
+      }
+    }
+
+    if (best_d2 != nullptr) {
+      *best_d2 = min_score;
+    }
+
+    return best_id;
+  }
+
   int best_id = -1;
   double min_d2 = std::numeric_limits<double>::infinity();
   const Eigen::Vector4d z = measurement_from_armor(armor);
   const Eigen::MatrixXd R = measurement_noise_matrix(armor);
-  const bool use_outpost_z_match =
-    (name == ArmorName::outpost && armor_num_ == 3 && height_init_done_);
 
   for (int id = 0; id < armor_num_; ++id) {
     const Eigen::MatrixXd H = h_jacobian(ekf_.x, id);
@@ -306,15 +349,13 @@ int Target::match_armor_id(const Armor & armor, double * best_d2) const
       continue;
     }
 
-    if (use_outpost_z_match) {
-      const double z_pred_world = h_armor_xyz(ekf_.x, id)[2];
-      const double z_residual = armor.xyz_in_world[2] - z_pred_world;
-      const double abs_z_residual = std::abs(z_residual);
-      if (abs_z_residual > outpost_match_z_gate_) {
-        continue;
-      }
-      d2 += outpost_match_z_penalty_scale_ * abs_z_residual * abs_z_residual;
+    const double z_pred_world = h_armor_xyz(ekf_.x, id)[2];
+    const double z_residual = armor.xyz_in_world[2] - z_pred_world;
+    const double abs_z_residual = std::abs(z_residual);
+    if (abs_z_residual > outpost_match_z_gate_) {
+      continue;
     }
+    d2 += outpost_match_z_penalty_scale_ * abs_z_residual * abs_z_residual;
 
     if (d2 < min_d2) {
       min_d2 = d2;

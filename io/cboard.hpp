@@ -28,6 +28,8 @@ const std::vector<std::string> SHOOT_MODES = { "left_shoot", "right_shoot", "bot
 typedef struct Autoaim_s {
     float yaw;
     float pitch;
+    float yaw_vel;
+    float pitch_vel;
     uint8_t enemy_team_color;
     uint8_t mode; 
     //  mode: 0-idle, 1-auto_aim, 2-small_buff, 3-big_buff, 4-outpost
@@ -56,6 +58,8 @@ typedef struct Message_phoenix_s {
 class CBoard {
 public:
     double bullet_speed;
+    double yaw_vel;
+    double pitch_vel;
     Mode mode;
     ShootMode shoot_mode;
     double ft_angle; //无人机专有

@@ -8,6 +8,8 @@
 namespace io {
 CBoard::CBoard(const std::string& config_path):
     bullet_speed(21.0),
+    yaw_vel(0.0),
+    pitch_vel(0.0),
     mode(Mode::idle),
     shoot_mode(ShootMode::left_shoot),
     queue_(5000) {
@@ -189,10 +191,14 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
             "[CBoard] Invalid bullet speed from MCU: raw={:.3f}. Keep fallback/current v={:.3f}",
             raw_bullet_speed, this->bullet_speed);
     }
-    double raw_yaw = data.yaw;
-    double raw_pitch = data.pitch;
-    double yaw      = raw_yaw;
-    double pitch    = raw_pitch;
+    double raw_yaw      = data.yaw;
+    double raw_pitch    = data.pitch;
+    double raw_yaw_vel   = data.yaw_vel;
+    double raw_pitch_vel = data.pitch_vel;
+    double yaw           = raw_yaw;
+    double pitch         = raw_pitch;
+    double yaw_velocity  = raw_yaw_vel;
+    double pitch_velocity = raw_pitch_vel;
 
     // // 记录原始读取值，便于排查数据格式/协议问题
     // tools::logger()->debug("[CBoard] raw angles: yaw={}, pitch={}, degrees_flag={}", yaw, pitch,
@@ -203,10 +209,14 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
         constexpr double kDeg2Rad = M_PI / 180.0;
         yaw *= kDeg2Rad;
         pitch *= kDeg2Rad;
+        yaw_velocity *= kDeg2Rad;
+        pitch_velocity *= kDeg2Rad;
     }
 
     yaw += imu_yaw_offset_rad_;
     pitch += imu_pitch_offset_rad_;
+    yaw_vel = yaw_velocity;
+    pitch_vel = pitch_velocity;
 
     // 合法性检查：排除 NaN/Inf 或极端错误值，避免产生非法四元数
     if (!std::isfinite(yaw) || !std::isfinite(pitch) || std::abs(yaw) > 1e4 || std::abs(pitch) > 1e4) {
@@ -224,10 +234,10 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
         auto dt = std::chrono::duration<double>(timestamp - last_debug_log_time_).count();
         if (dt > 0.5) {
             tools::logger()->info(
-                "[CBoard] raw(yaw={:.3f}, pitch={:.3f}, v={:.3f}) unit={} -> parsed(yaw={:.3f}rad, pitch={:.3f}rad, v={:.3f}, source={})",
-                raw_yaw, raw_pitch, raw_bullet_speed,
+                "[CBoard] raw(yaw={:.3f}, pitch={:.3f}, yaw_vel={:.3f}, pitch_vel={:.3f}, v={:.3f}) unit={} -> parsed(yaw={:.3f}rad, pitch={:.3f}rad, yaw_vel={:.3f}, pitch_vel={:.3f}, v={:.3f}, source={})",
+                raw_yaw, raw_pitch, raw_yaw_vel, raw_pitch_vel, raw_bullet_speed,
                 phoenix_angles_in_degrees_ ? "deg" : "rad",
-                yaw, pitch, this->bullet_speed,
+                yaw, pitch, yaw_vel, pitch_vel, this->bullet_speed,
                 use_default_bullet_speed_ ? "yaml_default" : "mcu_or_fallback");
             last_debug_log_time_ = timestamp;
         }
