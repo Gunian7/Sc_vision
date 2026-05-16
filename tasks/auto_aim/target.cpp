@@ -45,7 +45,8 @@ Target::Target(
   process_noise_angular_outpost_(0.1),
   measurement_noise_yaw_(2e-3),
   measurement_noise_pitch_(2e-3),
-  motion_state_(MotionState::static_state),
+  spin_state_(SpinModel::slow),
+  linear_speed_(0.0),
   imm_w_(0.0),
   imm_alpha_(0.0),
   t_(t)
@@ -73,13 +74,13 @@ Target::Target(
   auto center_z = xyz[2];
   auto height_step = 0.0;
 
-  // x vx y vy z vz a w r l h
+  // x vx y vy z vz a w r l h alpha
   // a: angle
   // w: angular velocity
   // l: r2 - r1
   // h: z2 - z1
-  Eigen::VectorXd x0(11);
-  x0 << center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, height_step;  //初始化预测量
+  Eigen::VectorXd x0(kStateDim);
+  x0 << center_x, 0, center_y, 0, center_z, 0, ypr[0], 0, r, 0, height_step, 0.0;  //初始化预测量
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   // 防止夹角求和出现异常值
@@ -94,10 +95,10 @@ Target::Target(
 
 Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
 {
-  Eigen::VectorXd x0(11);
-  x0 << x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h;
-  Eigen::VectorXd P0_dig(11);
-  P0_dig << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
+  Eigen::VectorXd x0(kStateDim);
+  x0 << x, 0, 0, 0, 0, 0, 0, vyaw, radius, 0, h, 0.0;
+  Eigen::VectorXd P0_dig(kStateDim);
+  P0_dig << 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0;
   Eigen::MatrixXd P0 = P0_dig.asDiagonal();
 
   height_offsets_.fill(0.0);
@@ -127,7 +128,8 @@ Target::Target(double x, double vyaw, double radius, double h) : armor_num_(4)
   process_noise_angular_outpost_ = 0.1;
   measurement_noise_yaw_ = 2e-3;
   measurement_noise_pitch_ = 2e-3;
-  motion_state_ = MotionState::static_state;
+  spin_state_ = SpinModel::slow;
+  linear_speed_ = 0.0;
   imm_w_ = 0.0;
   imm_alpha_ = 0.0;
   for (auto & samples : height_samples_) {
@@ -156,17 +158,18 @@ void Target::predict(double dt)
   // 状态转移矩阵
   // clang-format off
   Eigen::MatrixXd F{
-    {1, dt,  0,  0,  0,  0,  0,  0,  0,  0,  0},
-    {0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0},
-    {0,  0,  1, dt,  0,  0,  0,  0,  0,  0,  0},
-    {0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0},
-    {0,  0,  0,  0,  1, dt,  0,  0,  0,  0,  0},
-    {0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0},
-    {0,  0,  0,  0,  0,  0,  1, dt,  0,  0,  0},
-    {0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0},
-    {0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0},
-    {0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0},
-    {0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1}
+    {1, dt,  0,  0,  0,  0,  0,  0,  0,  0,  0,              0},
+    {0,  1,  0,  0,  0,  0,  0,  0,  0,  0,  0,              0},
+    {0,  0,  1, dt,  0,  0,  0,  0,  0,  0,  0,              0},
+    {0,  0,  0,  1,  0,  0,  0,  0,  0,  0,  0,              0},
+    {0,  0,  0,  0,  1, dt,  0,  0,  0,  0,  0,              0},
+    {0,  0,  0,  0,  0,  1,  0,  0,  0,  0,  0,              0},
+    {0,  0,  0,  0,  0,  0,  1, dt,  0,  0,  0, 0.5 * dt * dt},
+    {0,  0,  0,  0,  0,  0,  0,  1,  0,  0,  0,             dt},
+    {0,  0,  0,  0,  0,  0,  0,  0,  1,  0,  0,              0},
+    {0,  0,  0,  0,  0,  0,  0,  0,  0,  1,  0,              0},
+    {0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  1,              0},
+    {0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,              1}
   };
   // clang-format on
 
@@ -185,19 +188,26 @@ void Target::predict(double dt)
   auto c = dt * dt;
   // 预测过程噪声偏差的方差
   // clang-format off
-  Eigen::MatrixXd Q{
-    {a * v1, b * v1,      0,      0,      0,      0,      0,      0, 0, 0, 0},
-    {b * v1, c * v1,      0,      0,      0,      0,      0,      0, 0, 0, 0},
-    {     0,      0, a * v1, b * v1,      0,      0,      0,      0, 0, 0, 0},
-    {     0,      0, b * v1, c * v1,      0,      0,      0,      0, 0, 0, 0},
-    {     0,      0,      0,      0, a * v1, b * v1,      0,      0, 0, 0, 0},
-    {     0,      0,      0,      0, b * v1, c * v1,      0,      0, 0, 0, 0},
-    {     0,      0,      0,      0,      0,      0, a * v2, b * v2, 0, 0, 0},
-    {     0,      0,      0,      0,      0,      0, b * v2, c * v2, 0, 0, 0},
-    {     0,      0,      0,      0,      0,      0,      0,      0, 0, 0, 0},
-    {     0,      0,      0,      0,      0,      0,      0,      0, 0, 0, 0},
-    {     0,      0,      0,      0,      0,      0,      0,      0, 0, 0, 0}
-  };
+  Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(kStateDim, kStateDim);
+  Q(kIdxX, kIdxX) = a * v1;
+  Q(kIdxX, kIdxVx) = b * v1;
+  Q(kIdxVx, kIdxX) = b * v1;
+  Q(kIdxVx, kIdxVx) = c * v1;
+
+  Q(kIdxY, kIdxY) = a * v1;
+  Q(kIdxY, kIdxVy) = b * v1;
+  Q(kIdxVy, kIdxY) = b * v1;
+  Q(kIdxVy, kIdxVy) = c * v1;
+
+  Q(kIdxZ, kIdxZ) = a * v1;
+  Q(kIdxZ, kIdxVz) = b * v1;
+  Q(kIdxVz, kIdxZ) = b * v1;
+  Q(kIdxVz, kIdxVz) = c * v1;
+
+  Q(kIdxYaw, kIdxYaw) = a * v2;
+  Q(kIdxYaw, kIdxW) = b * v2;
+  Q(kIdxW, kIdxYaw) = b * v2;
+  Q(kIdxW, kIdxW) = c * v2;
   // clang-format on
 
   // 防止夹角求和出现异常值
@@ -206,10 +216,6 @@ void Target::predict(double dt)
     x_prior[6] = tools::limit_rad(x_prior[6]);
     return x_prior;
   };
-
-  // 前哨站转速特判
-  if (this->convergened() && this->name == ArmorName::outpost && std::abs(this->ekf_.x[7]) > 2)
-    this->ekf_.x[7] = this->ekf_.x[7] > 0 ? 2.51 : -2.51;
 
   ekf_.predict(F, Q, f);
 }
@@ -221,21 +227,7 @@ void Target::update(const Armor & armor)
     id = 0;
   }
 
-  const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
-  update_outpost_seen_ids(id);
-  update_outpost_height_samples(armor, id);
-
-  if (id < static_cast<int>(xyza_list.size())) {
-    auto current_z = xyza_list[id][2];
-    if (!jump_avg_inited_[id]) {
-      jump_avg_z_[id] = current_z;
-      jump_avg_inited_[id] = true;
-    } else {
-      jump_avg_z_[id] = jump_avg_alpha_ * current_z + (1.0 - jump_avg_alpha_) * jump_avg_z_[id];
-    }
-  }
-
-  update_switch_state(id, xyza_list);
+  apply_measurement_bookkeeping(armor, id);
   update_ypda(armor, id);
 }
 
@@ -263,22 +255,7 @@ bool Target::match_and_update(const std::vector<Armor> & armors)
   }
 
   const auto & armor = armors[best_armor_index];
-  const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
-  update_outpost_seen_ids(best_id);
-  update_outpost_height_samples(armor, best_id);
-
-  if (best_id < static_cast<int>(xyza_list.size())) {
-    auto current_z = xyza_list[best_id][2];
-    if (!jump_avg_inited_[best_id]) {
-      jump_avg_z_[best_id] = current_z;
-      jump_avg_inited_[best_id] = true;
-    } else {
-      jump_avg_z_[best_id] =
-        jump_avg_alpha_ * current_z + (1.0 - jump_avg_alpha_) * jump_avg_z_[best_id];
-    }
-  }
-
-  update_switch_state(best_id, xyza_list);
+  apply_measurement_bookkeeping(armor, best_id);
   update_ypda(armor, best_id);
   return true;
 }
@@ -409,6 +386,25 @@ Eigen::VectorXd Target::measurement_subtract(
   c[1] = tools::limit_rad(c[1]);
   c[3] = tools::limit_rad(c[3]);
   return c;
+}
+
+void Target::apply_measurement_bookkeeping(const Armor & armor, int id)
+{
+  const std::vector<Eigen::Vector4d> xyza_list = armor_xyza_list();
+  update_outpost_seen_ids(id);
+  update_outpost_height_samples(armor, id);
+
+  if (id >= 0 && id < static_cast<int>(xyza_list.size())) {
+    const auto current_z = xyza_list[id][2];
+    if (!jump_avg_inited_[id]) {
+      jump_avg_z_[id] = current_z;
+      jump_avg_inited_[id] = true;
+    } else {
+      jump_avg_z_[id] = jump_avg_alpha_ * current_z + (1.0 - jump_avg_alpha_) * jump_avg_z_[id];
+    }
+  }
+
+  update_switch_state(id, xyza_list);
 }
 
 void Target::update_outpost_seen_ids(int id)
@@ -612,6 +608,15 @@ Eigen::VectorXd Target::ekf_x() const { return ekf_.x; }
 
 const tools::ExtendedKalmanFilter & Target::ekf() const { return ekf_; }
 
+tools::ExtendedKalmanFilter & Target::ekf() { return ekf_; }
+
+void Target::set_filter_state(const Eigen::VectorXd & x, const Eigen::MatrixXd & P)
+{
+  ekf_.x = x;
+  ekf_.P = P;
+  ekf_.x[kIdxYaw] = tools::limit_rad(ekf_.x[kIdxYaw]);
+}
+
 std::vector<Eigen::Vector4d> Target::armor_xyza_list() const
 {
   std::vector<Eigen::Vector4d> _armor_xyza_list;
@@ -687,10 +692,10 @@ Eigen::MatrixXd Target::h_jacobian(const Eigen::VectorXd & x, int id) const
 
   // clang-format off
   Eigen::MatrixXd H_armor_xyza{
-    {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0},
-    {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0},
-    {0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh},
-    {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0}
+    {1, 0, 0, 0, 0, 0, dx_da, 0, dx_dr, dx_dl,     0, 0},
+    {0, 0, 1, 0, 0, 0, dy_da, 0, dy_dr, dy_dl,     0, 0},
+    {0, 0, 0, 0, 1, 0,     0, 0,     0,     0, dz_dh, 0},
+    {0, 0, 0, 0, 0, 0,     1, 0,     0,     0,     0, 0}
   };
   // clang-format on
 
@@ -769,6 +774,78 @@ bool Target::in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) cons
   return age >= 0.0 && age <= jump_fire_cooldown_;
 }
 
-void Target::set_angular_velocity(double angular_velocity) { ekf_.x[7] = angular_velocity; }
+Eigen::MatrixXd Target::state_transition_matrix(double dt, SpinModel model) const
+{
+  Eigen::MatrixXd F = Eigen::MatrixXd::Identity(kStateDim, kStateDim);
+  F(kIdxX, kIdxVx) = dt;
+  F(kIdxY, kIdxVy) = dt;
+  F(kIdxZ, kIdxVz) = dt;
+  F(kIdxYaw, kIdxW) = dt;
+
+  if (model == SpinModel::variable) {
+    F(kIdxYaw, kIdxAlpha) = 0.5 * dt * dt;
+    F(kIdxW, kIdxAlpha) = dt;
+  }
+
+  return F;
+}
+
+Eigen::MatrixXd Target::process_noise_matrix(
+  double dt, const Eigen::Vector3d & imm_q, SpinModel model) const
+{
+  double v1, v2;
+  if (name == ArmorName::outpost) {
+    v1 = process_noise_linear_outpost_;
+    v2 = process_noise_angular_outpost_;
+  } else {
+    v1 = process_noise_linear_normal_;
+    v2 = process_noise_angular_normal_;
+  }
+
+  const double a = dt * dt * dt * dt / 4;
+  const double b = dt * dt * dt / 2;
+  const double c = dt * dt;
+
+  Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(kStateDim, kStateDim);
+  Q(kIdxX, kIdxX) = a * v1;
+  Q(kIdxX, kIdxVx) = b * v1;
+  Q(kIdxVx, kIdxX) = b * v1;
+  Q(kIdxVx, kIdxVx) = c * v1;
+
+  Q(kIdxY, kIdxY) = a * v1;
+  Q(kIdxY, kIdxVy) = b * v1;
+  Q(kIdxVy, kIdxY) = b * v1;
+  Q(kIdxVy, kIdxVy) = c * v1;
+
+  Q(kIdxZ, kIdxZ) = a * v1;
+  Q(kIdxZ, kIdxVz) = b * v1;
+  Q(kIdxVz, kIdxZ) = b * v1;
+  Q(kIdxVz, kIdxVz) = c * v1;
+
+  Q(kIdxYaw, kIdxYaw) += a * v2 + std::max(0.0, imm_q[0]);
+  Q(kIdxYaw, kIdxW) += b * v2;
+  Q(kIdxW, kIdxYaw) += b * v2;
+  Q(kIdxW, kIdxW) += c * v2 + std::max(0.0, imm_q[1]);
+  Q(kIdxAlpha, kIdxAlpha) += std::max(0.0, imm_q[2]);
+
+  if (model == SpinModel::variable) {
+    Q(kIdxYaw, kIdxAlpha) += 0.5 * dt * dt * std::max(0.0, imm_q[2]);
+    Q(kIdxAlpha, kIdxYaw) += 0.5 * dt * dt * std::max(0.0, imm_q[2]);
+    Q(kIdxW, kIdxAlpha) += dt * std::max(0.0, imm_q[2]);
+    Q(kIdxAlpha, kIdxW) += dt * std::max(0.0, imm_q[2]);
+  }
+
+  return Q;
+}
+
+Eigen::VectorXd Target::predict_state(const Eigen::VectorXd & x, double dt, SpinModel model) const
+{
+  Eigen::MatrixXd F = state_transition_matrix(dt, model);
+  Eigen::VectorXd x_prior = F * x;
+  x_prior[kIdxYaw] = tools::limit_rad(x_prior[kIdxYaw]);
+  return x_prior;
+}
+
+void Target::set_angular_velocity(double angular_velocity) { ekf_.x[kIdxW] = angular_velocity; }
 
 }  // namespace auto_aim

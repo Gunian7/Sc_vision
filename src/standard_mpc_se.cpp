@@ -340,6 +340,9 @@ int main(int argc, char* argv[]) {
                 if (show_jump_down) {
                     tools::draw_text(img, "Down", cv::Point2f{aim_center.x, aim_center.y - 14.0F}, { 0, 0, 255 });
                 }
+                if (command.shoot) {
+                    tools::draw_text(img, "fire", cv::Point2f{aim_center.x, aim_center.y + 14.0F}, { 0, 0, 255 });
+                }
             }
 
             data["x"]         = x[0];

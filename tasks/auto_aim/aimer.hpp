@@ -49,6 +49,7 @@ private:
   int lock_id_ = -1;
   double high_speed_delay_time_;
   double low_speed_delay_time_;
+  double outpost_delay_time_;
   double decision_speed_;
   bool use_center_aim_when_high_speed_;
   double pre_aim_max_delta_angle_;

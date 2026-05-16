@@ -52,11 +52,10 @@ jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越
 jump_fire_cooldown: 0.01 # s 固定延时(不使用动态参数时生效)
 outpost_jump_fire_cooldown: 0.05 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
 jump_min_interval: 0.001 # s 跳变最小间隔
-motion_state_enable: true  # 是否启用运动状态判定，启用后会根据目标运动状态调整planner的参数
-enable_imm: true  # 是否启用IMM，启用后会根据目标运动状态在多个卡尔曼滤波器间切换
-motion_w_low: 5.0 # rad/s 角速度低阈值(滞回下边界)，用于区分慢速/快速旋转
-motion_w_high: 10.0 # rad/s 角速度高阈值(滞回上边界)，高于此值更倾向判为快速旋转
-motion_dw_high: 6.0 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
+motion_state_enable: true  # 是否启用旋转状态分类（slow/constant/variable），线速度单独输出
+enable_imm: true  # 是否启用IMM，启用后由IMM三模型直接输出旋转状态分类
+motion_w_low: 5.0 # rad/s fallback角速度阈值：|w|超过后判为constant
+motion_dw_high: 6.0 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
 imm_r_yaw: 0.002 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
 imm_q_slow: [1e-4, 8e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]

@@ -19,6 +19,10 @@ Planner::Planner(const std::string & config_path)
   decision_speed_ = tools::read<double>(yaml, "decision_speed");
   high_speed_delay_time_ = tools::read<double>(yaml, "high_speed_delay_time");
   low_speed_delay_time_ = tools::read<double>(yaml, "low_speed_delay_time");
+  outpost_delay_time_ = high_speed_delay_time_;
+  if (yaml["outpost_delay_time"].IsDefined()) {
+    outpost_delay_time_ = yaml["outpost_delay_time"].as<double>();
+  }
   use_center_aim_when_high_speed_ = true;
   if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
     use_center_aim_when_high_speed_ = yaml["use_center_aim_when_high_speed"].as<bool>();
@@ -104,8 +108,13 @@ Plan Planner::plan(std::optional<Target> target, double bullet_speed)
 {
   if (!target.has_value()) return {false, false, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  const double yaw_rate = std::abs(target->ekf_x()[7]);
-  double delay_time = yaw_rate > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  double delay_time;
+  if (target->name == ArmorName::outpost) {
+    delay_time = outpost_delay_time_;
+  } else {
+    const double yaw_rate = std::abs(target->ekf_x()[7]);
+    delay_time = yaw_rate > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  }
 
   auto future = std::chrono::steady_clock::now() + std::chrono::microseconds(int(delay_time * 1e6));
 

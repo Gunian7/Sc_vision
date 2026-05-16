@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <nlohmann/json.hpp>
+#include <numeric>
 #include <tuple>
 #include <vector>
 
@@ -14,6 +17,15 @@ namespace auto_aim
 {
 namespace
 {
+constexpr int kIdxVx = 1;
+constexpr int kIdxVy = 3;
+constexpr int kIdxVz = 5;
+constexpr int kIdxYaw = 6;
+constexpr int kIdxW = 7;
+constexpr int kIdxAlpha = 11;
+constexpr double kDefaultMotionDt = 0.01;
+constexpr size_t kConstantSpinModelIndex = 1;
+
 bool should_mark_bad_converge(const Target & target)
 {
   const auto & ekf = target.ekf();
@@ -38,6 +50,47 @@ bool should_mark_bad_converge(const Target & target)
 
   return false;
 }
+
+bool select_best_candidate(
+  const Target & target, const std::vector<Armor> & candidates, int * best_armor_index,
+  int * best_id)
+{
+  if (best_armor_index == nullptr || best_id == nullptr) {
+    return false;
+  }
+
+  *best_armor_index = -1;
+  *best_id = -1;
+  double best_d2 = std::numeric_limits<double>::infinity();
+
+  for (int i = 0; i < static_cast<int>(candidates.size()); ++i) {
+    double d2 = std::numeric_limits<double>::infinity();
+    const int id = target.match_armor_id(candidates[i], &d2);
+    if (id < 0) {
+      continue;
+    }
+    if (d2 < best_d2) {
+      best_d2 = d2;
+      *best_armor_index = i;
+      *best_id = id;
+    }
+  }
+
+  return *best_armor_index >= 0 && *best_id >= 0;
+}
+
+void configure_imm_for_target(SpinIMM * spin_imm, const Target & target)
+{
+  if (spin_imm == nullptr) {
+    return;
+  }
+
+  if (target.name == ArmorName::outpost) {
+    spin_imm->set_model_lock(kConstantSpinModelIndex);
+  } else {
+    spin_imm->clear_model_lock();
+  }
+}
 }  // namespace
 
 Tracker::Tracker(const std::string & config_path, Solver & solver)
@@ -48,10 +101,10 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   pre_state_{"lost"},
   last_timestamp_(std::chrono::steady_clock::now()),
   omni_target_priority_{ArmorPriority::fifth},
+  plotter_{config_path},
   imm_enabled_(true),
   motion_state_enabled_(true),
   motion_w_low_(1.2),
-  motion_w_high_(6.0),
   motion_dw_high_(8.0),
   imm_initialized_(false),
   imm_last_w_(0.0),
@@ -141,9 +194,6 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["motion_w_low"].IsDefined()) {
     motion_w_low_ = yaml["motion_w_low"].as<double>();
   }
-  if (yaml["motion_w_high"].IsDefined()) {
-    motion_w_high_ = yaml["motion_w_high"].as<double>();
-  }
   if (yaml["motion_dw_high"].IsDefined()) {
     motion_dw_high_ = yaml["motion_dw_high"].as<double>();
   }
@@ -157,11 +207,13 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   imm_params.alpha_decay_constant = 0.5;
   imm_params.dt_min = 1e-3;
   imm_params.dt_max = 0.2;
+  imm_params.mu_min = 1e-4;
 
   if (yaml["imm_transition"].IsDefined()) {
     const auto values = yaml["imm_transition"].as<std::vector<double>>();
     if (values.size() == 9) {
-      imm_params.transition << values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8];
+      imm_params.transition << values[0], values[1], values[2], values[3], values[4], values[5],
+        values[6], values[7], values[8];
     }
   }
   if (yaml["imm_r_yaw"].IsDefined()) {
@@ -189,13 +241,17 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
     imm_params.alpha_decay_slow = std::clamp(yaml["imm_alpha_decay_slow"].as<double>(), 0.0, 1.0);
   }
   if (yaml["imm_alpha_decay_constant"].IsDefined()) {
-    imm_params.alpha_decay_constant = std::clamp(yaml["imm_alpha_decay_constant"].as<double>(), 0.0, 1.0);
+    imm_params.alpha_decay_constant =
+      std::clamp(yaml["imm_alpha_decay_constant"].as<double>(), 0.0, 1.0);
   }
   if (yaml["imm_dt_min"].IsDefined()) {
     imm_params.dt_min = std::max(1e-6, yaml["imm_dt_min"].as<double>());
   }
   if (yaml["imm_dt_max"].IsDefined()) {
     imm_params.dt_max = std::max(imm_params.dt_min, yaml["imm_dt_max"].as<double>());
+  }
+  if (yaml["imm_mu_min"].IsDefined()) {
+    imm_params.mu_min = yaml["imm_mu_min"].as<double>();
   }
   spin_imm_.set_params(imm_params);
 
@@ -229,7 +285,7 @@ std::list<Target> Tracker::track(
   //            solver_.oupost_reprojection_error(a, -15 * CV_PI / 180.0);
   // });
 
-  // 优先选择靠近图像中心的装甲板
+  // 同优先级下优先选择靠近图像中心的装甲板
   armors.sort([](const Armor & a, const Armor & b) {
     cv::Point2f img_center(1280 / 2, 1024 / 2);  // TODO
     auto distance_1 = cv::norm(a.center - img_center);
@@ -427,26 +483,26 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
                      armor.name == ArmorName::five);
 
   if (is_balance) {
-    Eigen::VectorXd P0_dig(11);
-    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1;
+    Eigen::VectorXd P0_dig(12);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1, 1;
     target_ = Target(armor, t, 0.2, 2, P0_dig);
   }
 
   else if (armor.name == ArmorName::outpost) {
-    Eigen::VectorXd P0_dig(11);
-    P0_dig << 1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 1e-4;
+    Eigen::VectorXd P0_dig(12);
+    P0_dig << 1, 64, 1, 64, 1, 81, 0.4, 100, 1e-4, 0, 1e-4, 1e-4;
     target_ = Target(armor, t, 0.2765, 3, P0_dig);
   }
 
   else if (armor.name == ArmorName::base) {
-    Eigen::VectorXd P0_dig(11);
-    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1e-4, 0, 0;
+    Eigen::VectorXd P0_dig(12);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1e-4, 0, 0, 0;
     target_ = Target(armor, t, 0.3205, 3, P0_dig);
   }
 
   else {
-    Eigen::VectorXd P0_dig(11);
-    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1;
+    Eigen::VectorXd P0_dig(12);
+    P0_dig << 1, 64, 1, 64, 1, 64, 0.4, 100, 1, 1, 1, 1;
     target_ = Target(armor, t, 0.2, 4, P0_dig);
   }
 
@@ -466,19 +522,26 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   if (force_target_angular_velocity_) {
     target_.set_angular_velocity(forced_target_angular_velocity_);
   }
-  imm_initialized_ = false;
-  update_motion_state(target_, t);
 
+  if (imm_enabled_) {
+    configure_imm_for_target(&spin_imm_, target_);
+    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
+    imm_initialized_ = true;
+  } else {
+    spin_imm_.reset();
+    imm_initialized_ = false;
+  }
+
+  imm_last_w_ = target_.ekf_x()[kIdxW];
+  imm_dw_lpf_ = 0.0;
+  imm_last_t_ = t;
+
+  update_motion_state(target_, t);
   return true;
 }
 
 bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock::time_point t)
 {
-  target_.predict(t);
-  if (force_target_angular_velocity_) {
-    target_.set_angular_velocity(forced_target_angular_velocity_);
-  }
-
   std::vector<Armor> candidates;
   for (auto & armor : armors) {
     if (armor.name != target_.name || armor.type != target_.armor_type) continue;
@@ -487,9 +550,53 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
     candidates.push_back(armor);
   }
 
+  if (!imm_enabled_) {
+    target_.predict(t);
+    if (force_target_angular_velocity_) {
+      target_.set_angular_velocity(forced_target_angular_velocity_);
+    }
+
+    bool found = false;
+    if (!candidates.empty()) {
+      found = target_.match_and_update(candidates);
+    }
+
+    update_motion_state(target_, t);
+    return found;
+  }
+
+  configure_imm_for_target(&spin_imm_, target_);
+
+  if (!spin_imm_.initialized()) {
+    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
+    imm_initialized_ = true;
+    imm_last_w_ = target_.ekf_x()[kIdxW];
+    imm_dw_lpf_ = 0.0;
+    imm_last_t_ = t;
+  }
+
+  const double dt = imm_initialized_ ? tools::delta_time(t, imm_last_t_) : kDefaultMotionDt;
+  spin_imm_.predict(target_, dt);
+
+  // 复用 Target 内部时间与状态机辅助逻辑，但最终主状态由 IMM 融合结果回写
+  target_.predict(t);
+  target_.set_filter_state(spin_imm_.state(), spin_imm_.covariance());
+
   bool found = false;
-  if (!candidates.empty()) {
-    found = target_.match_and_update(candidates);
+  int best_armor_index = -1;
+  int best_id = -1;
+  if (select_best_candidate(target_, candidates, &best_armor_index, &best_id)) {
+    const auto & armor = candidates[best_armor_index];
+    target_.apply_measurement_bookkeeping(armor, best_id);
+    found = spin_imm_.update(target_, armor, best_id);
+    if (found) {
+      target_.set_filter_state(spin_imm_.state(), spin_imm_.covariance());
+    }
+  }
+
+  if (force_target_angular_velocity_) {
+    target_.set_angular_velocity(forced_target_angular_velocity_);
+    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
   }
 
   update_motion_state(target_, t);
@@ -498,34 +605,64 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
 
 void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::time_point t)
 {
-  if (!motion_state_enabled_) {
-    target.set_motion_state(MotionState::static_state);
-    target.set_imm_output(target.ekf_x()[7], 0.0);
-    return;
-  }
+  std::array<double, SpinIMM::kModelCount> model_probs{};
+  std::array<double, SpinIMM::kModelCount> model_ws{};
+  std::array<double, SpinIMM::kModelCount> model_alphas{};
 
-  auto ekf_x = target.ekf_x();
+  Eigen::VectorXd fused_state = target.ekf_x();
+  SpinModel spin_state = SpinModel::slow;
 
-  double dt = 0.01;
-  if (imm_initialized_) {
-    dt = tools::delta_time(t, imm_last_t_);
-  }
+  if (imm_enabled_ && spin_imm_.initialized()) {
+    fused_state = spin_imm_.state();
+    model_probs = spin_imm_.getModelProbs();
+    model_ws = spin_imm_.getModelAngularVelocitys();
+    model_alphas = spin_imm_.getModelAngularAccelerations();
 
-  double w = ekf_x[7];
-  double alpha = 0.0;
-  if (imm_enabled_) {
-    const double yaw_measure = ekf_x[6];
-    if (!imm_initialized_) {
-      spin_imm_.reset(yaw_measure, ekf_x[7], 0.0);
-      imm_last_w_ = ekf_x[7];
-      imm_dw_lpf_ = 0.0;
-      imm_initialized_ = true;
+    const auto best_model_it = std::max_element(model_probs.begin(), model_probs.end());
+    const size_t best_model_index = std::distance(model_probs.begin(), best_model_it);
+    switch (best_model_index) {
+      case 0:
+        spin_state = SpinModel::slow;
+        break;
+      case 1:
+        spin_state = SpinModel::constant;
+        break;
+      default:
+        spin_state = SpinModel::variable;
+        break;
     }
+  } else if (motion_state_enabled_) {
+    const double w_for_fallback = fused_state.size() > kIdxW ? fused_state[kIdxW] : 0.0;
+    const double alpha_for_fallback = fused_state.size() > kIdxAlpha ? fused_state[kIdxAlpha] : 0.0;
+    const double abs_w = std::abs(w_for_fallback);
+    const double abs_alpha = std::abs(alpha_for_fallback);
 
-    auto imm = spin_imm_.update(yaw_measure, dt);
-    w = imm.w;
-    alpha = imm.alpha;
-  } else if (!imm_initialized_) {
+    if (abs_alpha >= motion_dw_high_) {
+      spin_state = SpinModel::variable;
+    } else if (abs_w >= motion_w_low_) {
+      spin_state = SpinModel::constant;
+    } else {
+      spin_state = SpinModel::slow;
+    }
+  }
+
+  double w = 0.0;
+  double alpha = 0.0;
+  double linear_speed = 0.0;
+  if (fused_state.size() > kIdxW) {
+    w = fused_state[kIdxW];
+  }
+  if (fused_state.size() > kIdxAlpha) {
+    alpha = fused_state[kIdxAlpha];
+  }
+  if (fused_state.size() > kIdxVz) {
+    linear_speed = std::sqrt(
+      fused_state[kIdxVx] * fused_state[kIdxVx] + fused_state[kIdxVy] * fused_state[kIdxVy] +
+      fused_state[kIdxVz] * fused_state[kIdxVz]);
+  }
+
+  const double dt = imm_initialized_ ? tools::delta_time(t, imm_last_t_) : kDefaultMotionDt;
+  if (!imm_initialized_) {
     imm_last_w_ = w;
     imm_dw_lpf_ = 0.0;
     imm_initialized_ = true;
@@ -536,22 +673,29 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
   imm_last_w_ = w;
   imm_last_t_ = t;
 
-  const double abs_w = std::abs(w);
-  const double abs_dw = std::abs(imm_dw_lpf_);
-
-  MotionState state = MotionState::static_state;
-  if (abs_w < motion_w_low_) {
-    state = MotionState::static_state;
-  } else if (abs_dw >= motion_dw_high_) {
-    state = MotionState::spin_variable;
-  } else if (abs_w < motion_w_high_) {
-    state = MotionState::spin_slow_inplace;
-  } else {
-    state = MotionState::spin_fast_inplace;
-  }
-
-  target.set_motion_state(state);
+  target.set_spin_state(spin_state);
+  target.set_linear_speed(linear_speed);
   target.set_imm_output(w, alpha);
+
+  nlohmann::json plot_json;
+  plot_json["imm_enabled"] = imm_enabled_;
+  plot_json["spin_state"] = static_cast<int>(spin_state);
+  plot_json["linear_speed"] = linear_speed;
+  plot_json["fused_w"] = w;
+  plot_json["fused_alpha"] = alpha;
+  plot_json["ekf_w"] = target.ekf_x().size() > kIdxW ? target.ekf_x()[kIdxW] : 0.0;
+  plot_json["ekf_alpha"] = target.ekf_x().size() > kIdxAlpha ? target.ekf_x()[kIdxAlpha] : 0.0;
+  plot_json["imm_dw_lpf"] = imm_dw_lpf_;
+  plot_json["model_prob_slow"] = model_probs[0];
+  plot_json["model_prob_constant"] = model_probs[1];
+  plot_json["model_prob_variable"] = model_probs[2];
+  plot_json["model_w_slow"] = model_ws[0];
+  plot_json["model_w_constant"] = model_ws[1];
+  plot_json["model_w_variable"] = model_ws[2];
+  plot_json["model_alpha_slow"] = model_alphas[0];
+  plot_json["model_alpha_constant"] = model_alphas[1];
+  plot_json["model_alpha_variable"] = model_alphas[2];
+  plotter_.plot(plot_json);
 }
 
 }  // namespace auto_aim

@@ -69,9 +69,8 @@ jump_fire_cooldown: 0.0 # s
 jump_min_interval: 0.0 # s
 motion_state_enable: true
 enable_imm: true
-motion_w_low: 1.2 # rad/s
-motion_w_high: 6.0 # rad/s
-motion_dw_high: 8.0 # rad/s^2
+motion_w_low: 1.2 # rad/s fallback角速度阈值：|w|超过后判为constant
+motion_dw_high: 8.0 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3
 imm_r_yaw: 0.002
 imm_q_slow: [1e-4, 8e-2, 1e-1] # [yaw,w,alpha]

@@ -1,25 +1,32 @@
 # IMM 原理与当前工程实现说明
 
-本文说明 `Sc_vision` 中新增的 `IMM`（Interacting Multiple Model，交互式多模型）是如何工作的、为什么适合变速小陀螺，以及当前代码里是怎么接入 `Tracker/Planner` 的。
+本文说明 `Sc_vision` 中的 `IMM`（Interacting Multiple Model，交互式多模型）如何工作、为什么适合小陀螺旋转状态估计，以及当前代码里如何接入 `Tracker`。
 
 ---
 
 ## 1. 为什么需要 IMM
 
-单一模型（单 KF/EKF）通常默认目标运动模式固定，例如“近似匀速转动”。
-但实战中小陀螺会在不同模式间切换：
+单一模型（单 KF/EKF）通常假设目标运动模式在一段时间内近似固定，例如“近似匀速转动”。
 
-- 慢速转
-- 匀速快速转
-- 明显加减速（变速）
+但实战中的小陀螺并不是始终满足同一种旋转模型，常见情况包括：
 
-单模型在模式切换时会出现滞后或抖动。IMM 的核心思想是：
+- 慢速转动
+- 近似匀速快速转动
+- 明显加减速的变速转动
 
-- 同时维护多个模型并行估计
-- 每一帧根据观测结果给每个模型分配概率
-- 用概率加权融合得到最终状态
+如果只使用单模型，模式切换时往往会出现：
 
-这样能兼顾“稳态”和“突变”场景。
+- 角速度估计滞后
+- `yaw` 跟踪抖动
+- 变速阶段响应不够及时
+
+IMM 的核心思想是：
+
+- 同时维护多个旋转模型并行估计
+- 每一帧根据观测结果更新各模型概率
+- 用模型概率加权融合得到最终状态
+
+这样能在“稳态”和“突变”之间取得更好的平衡。
 
 ---
 
@@ -27,33 +34,32 @@
 
 设模型数量为 $M$，每个模型有状态 $x_i, P_i$，模型概率为 $\mu_i$，模型转移矩阵为 $\Pi=[\pi_{ij}]$。
 
-每一帧的流程：
+每一帧的流程为：
 
 1. **交互混合（Interaction / Mixing）**
-   - 先计算模型 $j$ 的先验权重归一化常数：
+   - 计算模型 $j$ 的先验归一化常数：
      $$c_j = \sum_{i=1}^{M} \pi_{ij}\mu_i$$
-   - 计算从模型 $i\rightarrow j$ 的混合权重：
+   - 计算从模型 $i \rightarrow j$ 的混合权重：
      $$\mu_{i|j} = \frac{\pi_{ij}\mu_i}{c_j}$$
    - 用 $\mu_{i|j}$ 混合出模型 $j$ 的初始状态与协方差。
 
 2. **各模型独立预测/更新（Model-matched KF）**
-   - 每个模型用自己的状态转移矩阵与过程噪声做预测。
-   - 用测量做更新，得到创新及其协方差。
+   - 每个模型使用自己的状态转移矩阵与过程噪声做预测
+   - 每个模型独立用观测做更新，得到创新及其协方差
 
 3. **模型概率更新（Bayes）**
-   - 计算每个模型的似然 $\Lambda_j$（通常高斯）：
-     $$\Lambda_j \propto \exp\left(-\frac{1}{2}\nu_j^T S_j^{-1}\nu_j\right)/\sqrt{|S_j|}$$
-   - 更新后验概率：
+   - 计算每个模型的似然 $\Lambda_j$
+   - 更新后验模型概率：
      $$\mu_j^+ = \frac{c_j\Lambda_j}{\sum_k c_k\Lambda_k}$$
 
 4. **融合输出（Combination）**
-   - 最终状态：
+   - 最终融合状态：
      $$\hat{x}=\sum_{j=1}^{M}\mu_j^+ x_j$$
-   - 对角度类变量需做环绕处理（$[-\pi,\pi]$）。
+   - 对角度变量需要单独处理环绕问题，避免直接线性平均导致跳变
 
 ---
 
-## 3. 当前工程中的 IMM 实现（代码对应）
+## 3. 当前工程中的 IMM 实现
 
 ### 3.1 文件位置
 
@@ -64,30 +70,47 @@
 
 ### 3.2 状态定义
 
-当前实现采用 3 维状态：
+当前 IMM 只负责**旋转相关状态**，采用 3 维状态：
 
 - `yaw`：目标航向角
 - `w`：角速度
-- `alpha`：角加速度（用于变速判定）
+- `alpha`：角加速度
 
-即：$x=[yaw,\,w,\,alpha]^T$。
+即：
+
+$$x=[yaw,\;w,\;\alpha]^T$$
+
+注意：
+
+- 这里的 IMM 关注的是**旋转维度**
+- 目标的线速度仍保留在主 EKF 状态中
+- 当前设计中**线速度与旋转状态分类解耦**
 
 ### 3.3 三个并行模型
 
-`SpinIMM::Mode`：
+`SpinIMM` 中维护 3 个旋转模型，对应当前代码里的三种 `SpinModel`：
 
-1. `slow_spin`
-2. `constant_spin`
-3. `variable_spin`
+1. `slow`
+2. `constant`
+3. `variable`
 
-实现中三个模型的差异主要体现在：
+它们的含义分别是：
 
-- 状态转移矩阵 `F`（`variable_spin` 含 $0.5dt^2$ 与 $dt$ 的加速度项）
-- 过程噪声 `Q`（`variable_spin` 设得更大，允许更剧烈变化）
+- `slow`：低角速度、接近慢转
+- `constant`：角速度较高且相对稳定
+- `variable`：存在明显角加速度，处于变速旋转阶段
+
+实现中三个模型的主要差异体现在：
+
+- 状态转移矩阵 `F`
+- 过程噪声 `Q`
+- 对 `alpha` 的衰减方式
+
+其中 `variable` 模型允许更明显的角速度变化，因此通常具有更激进的过程噪声设置。
 
 ### 3.4 模型转移矩阵
 
-在 `SpinIMM::SpinIMM()` 中：
+默认模型转移矩阵在 `Tracker` 构造阶段通过 `SpinIMM::Params` 配置：
 
 $$
 \Pi=
@@ -100,142 +123,214 @@ $$
 
 含义：
 
-- 对角线较大：模型有“自保持”倾向
-- 非对角线较小：允许切换，但不会过于频繁
+- 对角线较大：模型具有较强自保持性
+- 非对角线较小：允许在不同旋转模式之间切换，但不会频繁抖动
 
 ### 3.5 角度处理
 
-`yaw` 是圆周变量，直接线性平均会出错。
-当前实现使用：
+`yaw` 是圆周变量，不能直接做普通线性平均。
 
-- `normalize_angle()` 保持角度在 $[-\pi,\pi]$
-- 混合时用 `sin/cos` 加权后 `atan2` 恢复角度（见 `blend_state()`）
+当前实现对角度专门处理：
 
-这是 IMM 用于角度状态时的关键细节。
+- 使用 `normalize_angle()` 保持角度在 $[-\pi,\pi]$
+- 融合时用 `sin/cos` 加权，再通过 `atan2` 恢复角度
+
+这是 IMM 应用于角度状态时的关键实现细节。
 
 ---
 
 ## 4. 如何接入 Tracker（当前实现）
 
-接入函数：`Tracker::update_motion_state()`（`tasks/auto_aim/tracker.cpp`）
+接入函数为：
 
-每帧逻辑：
+- `Tracker::update_motion_state()`  
+- 位置：`tasks/auto_aim/tracker.cpp`
 
-1. 从 `target.ekf_x()` 取观测：
-   - `yaw_measure = ekf_x[6]`
-   - 平移速度 `v = hypot(ekf_x[1], ekf_x[3])`
+### 4.1 当前逻辑
 
-2. 更新 IMM：
-   - 首帧 `reset()`
-   - 后续 `spin_imm_.update(yaw_measure, dt)`
+每帧大致流程如下：
 
-3. 由 IMM 输出得到：
-   - `w = imm.w`
-   - `alpha = imm.alpha`
+1. 准备融合状态
+   - 默认使用 `target.ekf_x()` 作为状态来源
+   - 若 `IMM` 已启用且已初始化，则使用 `spin_imm_.state()` 作为融合后的旋转状态来源
 
-4. 计算角加速度指标（用于第 6 类“变速小陀螺”）：
-   - 先差分 $dw/dt$
-   - 再低通滤波：`imm_dw_lpf_ = 0.7*old + 0.3*new`
+2. 若 `IMM` 已启用
+   - 读取三模型概率：
+     - `model_prob_slow`
+     - `model_prob_constant`
+     - `model_prob_variable`
+   - 读取各模型的 `w / alpha`
+   - 取概率最大的模型，直接映射为：
+     - `SpinModel::slow`
+     - `SpinModel::constant`
+     - `SpinModel::variable`
 
-5. 依据阈值分类六状态：
-   - `static_state`
-   - `translate`
-   - `spin_slow_inplace`
-   - `move_slow_spin`
-   - `spin_fast_inplace`
-   - `spin_variable`
+3. 若 `IMM` 未启用，但 `motion_state_enable` 为真
+   - 使用 fallback 规则做简单旋转分类：
+     - 若 `|alpha| >= motion_dw_high`，判为 `variable`
+     - 否则若 `|w| >= motion_w_low`，判为 `constant`
+     - 否则判为 `slow`
 
-6. 写回 `Target`：
-   - `target.set_motion_state(state)`
+4. 从融合状态中提取：
+   - `w`
+   - `alpha`
+   - `vx, vy, vz`
+
+5. 单独计算线速度模长：
+   $$
+   linear\_speed = \sqrt{vx^2 + vy^2 + vz^2}
+   $$
+
+6. 将结果写回 `Target`
+   - `target.set_spin_state(spin_state)`
+   - `target.set_linear_speed(linear_speed)`
    - `target.set_imm_output(w, alpha)`
 
-### 4.1 Tracker 可配置参数
+### 4.2 当前设计要点
 
-在构造中支持读取：
+这里最重要的一点是：
+
+- **旋转状态分类只由角速度/角加速度相关信息决定**
+- **线速度不再参与旋转类别枚举**
+- **平移信息通过 `linear_speed` 单独输出**
+
+也就是说，当前工程已经不再使用旧的“把平移和旋转混在一起”的复合 `MotionState` 设计。
+
+---
+
+## 5. Tracker 可配置参数
+
+当前与旋转状态分类直接相关的配置项包括：
 
 - `motion_state_enable`
-- `motion_v_enter`
-- `motion_v_exit`
+- `enable_imm`
 - `motion_w_low`
-- `motion_w_high`
 - `motion_dw_high`
 
-对应“是否启用、平移判定、慢/快旋转分界、变速分界”。
+含义如下：
+
+- `motion_state_enable`
+  - 是否启用旋转状态分类逻辑
+- `enable_imm`
+  - 是否启用 IMM 三模型融合
+- `motion_w_low`
+  - fallback 模式下的角速度阈值，`|w|` 超过后判为 `constant`
+- `motion_dw_high`
+  - fallback 模式下的角加速度阈值，`|alpha|` 超过后判为 `variable`
+
+此外 IMM 本身也支持以下参数配置：
+
+- `imm_transition`
+- `imm_r_yaw`
+- `imm_q_slow`
+- `imm_q_constant`
+- `imm_q_variable`
+- `imm_alpha_decay_slow`
+- `imm_alpha_decay_constant`
+- `imm_dt_min`
+- `imm_dt_max`
 
 ---
 
-## 5. 如何影响 Planner（当前实现）
+## 6. 输出到日志/可视化的数据
 
-位置：`tasks/auto_aim/planner/planner.cpp` 的 `Planner::plan(std::optional<Target>, ...)`
+当前 `Tracker::update_motion_state()` 会输出一组与 IMM 相关的调试量，便于回放分析：
 
-当前逻辑：
+- `imm_enabled`
+- `spin_state`
+- `linear_speed`
+- `fused_w`
+- `fused_alpha`
+- `ekf_w`
+- `ekf_alpha`
+- `imm_dw_lpf`
+- `model_prob_slow`
+- `model_prob_constant`
+- `model_prob_variable`
+- `model_w_slow`
+- `model_w_constant`
+- `model_w_variable`
+- `model_alpha_slow`
+- `model_alpha_constant`
+- `model_alpha_variable`
 
-1. 用 `target->imm_w()`（若无则回退 `ekf_x()[7]`）判断高低速档：
-   - 高速：`high_speed_delay_time`
-   - 低速：`low_speed_delay_time`
+这些量可用于判断：
 
-2. 根据六状态再叠加额外 delay：
-   - `spin_fast_inplace`：`+ imm_fast_spin_extra_delay`
-   - `spin_variable`：`+ imm_variable_spin_extra_delay`
-
-可配置参数：
-
-- `imm_fast_spin_extra_delay`（默认 `0.015`）
-- `imm_variable_spin_extra_delay`（默认 `0.03`）
-
-这样做的目标是：在高风险状态（快速转、变速）下更保守，降低误打和相位错位。
-
----
-
-## 6. 与“自适应 Kalman”关系
-
-当前实现重点是 **多模型切换**（IMM），不是纯粹“在线改 Q/R”的自适应 KF。
-
-- IMM 解决：模式切换（慢转 / 匀速 / 变速）
-- 自适应 KF 解决：噪声强弱变化
-
-工程上常见最优实践是：
-
-- IMM 作为主框架
-- 每个子模型内部再做轻量自适应（后续可加）
+- 模型切换是否稳定
+- `IMM` 输出是否比裸 EKF 更平滑
+- `variable` 是否只在明显加减速阶段出现
+- 线速度与旋转状态是否已经实现良好解耦
 
 ---
 
-## 7. 调参建议（按优先级）
+## 7. 与“自适应 Kalman”关系
 
-1. **先调六状态阈值**
-   - `motion_w_low`, `motion_w_high`, `motion_dw_high`
-2. **再调额外 delay**
-   - `imm_fast_spin_extra_delay`, `imm_variable_spin_extra_delay`
-3. **最后调 IMM 内部参数**
-   - 转移矩阵 `transition_`
-   - 三模型 `Q` 对角线
+当前实现的重点是 **多模型切换**，不是纯粹的“在线调整 Q/R”的自适应 KF。
 
-建议先日志回放看：
+两者关注点不同：
 
-- `imm_w` 是否比 `ekf_x()[7]` 平滑且响应足够快
-- `spin_variable` 是否只在明显加减速阶段出现
-- 开火时误差是否因额外 delay 降低
+- IMM 主要解决：**运动模式切换**
+  - 慢转 / 匀速转 / 变速转
+- 自适应 KF 主要解决：**噪声统计变化**
+  - 某一阶段观测更抖
+  - 某一阶段模型误差更大
 
----
+工程上常见做法是：
 
-## 8. 当前实现边界与后续可增强点
+- 先用 IMM 解决模式切换问题
+- 再视需要在各子模型内部做轻量自适应
 
-当前版本是“最小可用”实现，优点是侵入小、可快速上线验证；后续可增强：
-
-1. 把 `mode_probability` 打到可视化日志（便于看模式切换是否合理）
-2. 增加 `motion_state_min_hold`（防止频繁抖动切态）
-3. 在 `Shooter` 侧直接使用 `motion_state` 做开火门控（例如 `spin_variable` 短暂抑制）
-4. 在每个子模型内部引入轻量自适应 `Q/R`
+当前仓库属于前者。
 
 ---
 
-## 9. 一句话总结
+## 8. 调参建议
 
-本项目的 IMM 实现本质是：
+建议按以下优先级调参：
 
-- 用 3 个旋转模型并行估计 `yaw/w/alpha`
-- 通过模型概率在线选择“当前更像哪种旋转状态”
-- 将结果映射到六状态并反馈给 `Planner` 做 delay 策略
+1. **先调三模型分类行为**
+   - `motion_w_low`
+   - `motion_dw_high`
 
-从而提升变速小陀螺场景下的稳定性与实战命中一致性。
+2. **再调 IMM 本体参数**
+   - `imm_transition`
+   - `imm_r_yaw`
+   - `imm_q_slow`
+   - `imm_q_constant`
+   - `imm_q_variable`
+   - `imm_alpha_decay_slow`
+   - `imm_alpha_decay_constant`
+
+3. **最后结合日志回放观察效果**
+   - `fused_w` 是否比 EKF 原始角速度更稳
+   - 模型概率是否在合理区间切换
+   - `variable` 是否只在确实变速时占主导
+   - `linear_speed` 是否能稳定反映平移强度
+
+---
+
+## 9. 当前实现边界
+
+当前版本是较小侵入的工程实现，特点是：
+
+- 只对旋转维度引入 IMM
+- 保留主 EKF 的平移状态
+- 通过 `SpinModel + linear_speed` 输出给后级模块使用
+
+这意味着：
+
+- 它不是完整的“全状态 IMM”
+- 它的优势集中在小陀螺旋转状态识别与角速度估计
+- 平移与旋转的语义已经解耦，便于后续模块独立使用
+
+---
+
+## 10. 一句话总结
+
+本项目当前的 IMM 实现本质上是：
+
+- 用 3 个旋转模型并行估计 `yaw / w / alpha`
+- 用模型概率直接输出三种旋转状态：`slow / constant / variable`
+- 将线速度作为独立量 `linear_speed` 单独输出
+
+从而避免旧的复合 `MotionState` 设计，把“旋转分类”和“平移强度”分开处理。

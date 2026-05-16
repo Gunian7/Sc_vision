@@ -26,6 +26,9 @@ private:
   double second_tolerance_;
   double yaw_jump_threshold_;
   double yaw_jump_fire_cooldown_;
+  double outpost_tolerance_;
+  double outpost_phase_window_;
+  double outpost_yaw_vel_threshold_;
   bool has_yaw_jump_time_;
   std::chrono::steady_clock::time_point last_yaw_jump_time_;
   bool auto_fire_;

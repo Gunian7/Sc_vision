@@ -16,14 +16,11 @@
 namespace auto_aim
 {
 
-enum class MotionState : int
+enum class SpinModel : int
 {
-  static_state = 0,
-  translate = 1,
-  spin_slow_inplace = 2,
-  move_slow_spin = 3,
-  spin_fast_inplace = 4,
-  spin_variable = 5
+  slow = 0,
+  constant = 1,
+  variable = 2
 };
 
 class Target
@@ -45,10 +42,24 @@ public:
   void predict(double dt);
   void update(const Armor & armor);
   bool match_and_update(const std::vector<Armor> & armors);
+  void apply_measurement_bookkeeping(const Armor & armor, int id);
 
   Eigen::VectorXd ekf_x() const;
   const tools::ExtendedKalmanFilter & ekf() const;
+  tools::ExtendedKalmanFilter & ekf();
+  void set_filter_state(const Eigen::VectorXd & x, const Eigen::MatrixXd & P);
   std::vector<Eigen::Vector4d> armor_xyza_list() const;
+  int match_armor_id(const Armor & armor, double * best_d2 = nullptr) const;
+  Eigen::Vector4d measurement_from_armor(const Armor & armor) const;
+  Eigen::MatrixXd measurement_noise_matrix(const Armor & armor) const;
+  Eigen::Vector4d predicted_measurement(const Eigen::VectorXd & x, int id) const;
+  Eigen::VectorXd measurement_subtract(const Eigen::VectorXd & a, const Eigen::VectorXd & b) const;
+  Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
+  Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;
+  Eigen::MatrixXd state_transition_matrix(double dt, SpinModel model) const;
+  Eigen::MatrixXd process_noise_matrix(
+    double dt, const Eigen::Vector3d & imm_q, SpinModel model) const;
+  Eigen::VectorXd predict_state(const Eigen::VectorXd & x, double dt, SpinModel model) const;
 
   bool diverged() const;
 
@@ -69,8 +80,10 @@ public:
   void set_match_gates(double tracked_gate, double init_gate);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
   void set_angular_velocity(double angular_velocity);
-  void set_motion_state(MotionState state) { motion_state_ = state; }
-  MotionState motion_state() const { return motion_state_; }
+  void set_spin_state(SpinModel state) { spin_state_ = state; }
+  SpinModel spin_state() const { return spin_state_; }
+  void set_linear_speed(double linear_speed) { linear_speed_ = linear_speed; }
+  double linear_speed() const { return linear_speed_; }
   void set_imm_output(double w, double alpha) { imm_w_ = w; imm_alpha_ = alpha; }
   double imm_w() const { return imm_w_; }
   double imm_alpha() const { return imm_alpha_; }
@@ -80,6 +93,20 @@ public:
   bool checkinit();
 
 private:
+  static constexpr int kStateDim = 12;
+  static constexpr int kIdxX = 0;
+  static constexpr int kIdxVx = 1;
+  static constexpr int kIdxY = 2;
+  static constexpr int kIdxVy = 3;
+  static constexpr int kIdxZ = 4;
+  static constexpr int kIdxVz = 5;
+  static constexpr int kIdxYaw = 6;
+  static constexpr int kIdxW = 7;
+  static constexpr int kIdxR = 8;
+  static constexpr int kIdxL = 9;
+  static constexpr int kIdxH = 10;
+  static constexpr int kIdxAlpha = 11;
+
   int armor_num_;
   int switch_count_;
   int update_count_;
@@ -116,26 +143,19 @@ private:
   double process_noise_angular_outpost_;
   double measurement_noise_yaw_;
   double measurement_noise_pitch_;
-  MotionState motion_state_;
+  SpinModel spin_state_;
+  double linear_speed_;
   double imm_w_;
   double imm_alpha_;
 
   tools::ExtendedKalmanFilter ekf_;
   std::chrono::steady_clock::time_point t_;
 
-  int match_armor_id(const Armor & armor, double * best_d2 = nullptr) const;
-  Eigen::Vector4d measurement_from_armor(const Armor & armor) const;
-  Eigen::MatrixXd measurement_noise_matrix(const Armor & armor) const;
-  Eigen::Vector4d predicted_measurement(const Eigen::VectorXd & x, int id) const;
-  Eigen::VectorXd measurement_subtract(const Eigen::VectorXd & a, const Eigen::VectorXd & b) const;
   double robust_height_stat(const std::vector<double> & samples) const;
   void update_outpost_seen_ids(int id);
   void update_outpost_height_samples(const Armor & armor, int id);
   void update_switch_state(int id, const std::vector<Eigen::Vector4d> & xyza_list);
   void update_ypda(const Armor & armor, int id);
-
-  Eigen::Vector3d h_armor_xyz(const Eigen::VectorXd & x, int id) const;
-  Eigen::MatrixXd h_jacobian(const Eigen::VectorXd & x, int id) const;
 };
 
 }  // namespace auto_aim

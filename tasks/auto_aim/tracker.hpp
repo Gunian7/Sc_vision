@@ -11,6 +11,7 @@
 #include "solver.hpp"
 #include "target.hpp"
 #include "tasks/omniperception/perceptron.hpp"
+#include "tools/plotter.hpp"
 #include "tools/thread_safe_queue.hpp"
 
 namespace auto_aim
@@ -61,10 +62,10 @@ private:
   std::chrono::steady_clock::time_point last_timestamp_;
   ArmorPriority omni_target_priority_;
   SpinIMM spin_imm_;
+  tools::Plotter plotter_;
   bool imm_enabled_;
   bool motion_state_enabled_;
   double motion_w_low_;
-  double motion_w_high_;
   double motion_dw_high_;
   bool imm_initialized_;
   double imm_last_w_;

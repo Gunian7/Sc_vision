@@ -31,6 +31,10 @@ Aimer::Aimer(const std::string & config_path)
   outpost_leaving_angle_ = 30 / 57.3;
   high_speed_delay_time_ = yaml["high_speed_delay_time"].as<double>();
   low_speed_delay_time_ = yaml["low_speed_delay_time"].as<double>();
+  outpost_delay_time_ = high_speed_delay_time_;
+  if (yaml["outpost_delay_time"].IsDefined()) {
+    outpost_delay_time_ = yaml["outpost_delay_time"].as<double>();
+  }
   decision_speed_ = yaml["decision_speed"].as<double>();
   use_center_aim_when_high_speed_ = true;
   if (yaml["use_center_aim_when_high_speed"].IsDefined()) {
@@ -91,8 +95,13 @@ io::Command Aimer::aim(
   auto target = targets.front();
 
   auto ekf = target.ekf();
-  double delay_time =
-    std::abs(target.ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  double delay_time;
+  if (target.name == ArmorName::outpost) {
+    delay_time = outpost_delay_time_;
+  } else {
+    delay_time =
+      std::abs(target.ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  }
 
   // tools::logger()->info(
   //   "[Aimer] w={:.3f} rad/s, delay={:.3f}s, bullet_speed={:.2f} m/s (threshold={:.3f})",
