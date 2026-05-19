@@ -56,7 +56,7 @@ udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
 #### 相机测试
 验证相机是否能正常出图：
 ```bash
-./build/camera_test --config-path=configs/standard.yaml --display
+./build/camera_test config-path=configs/standard.yaml --display
 ```
 > 注意：`camera_test` **只有在传入 `--display`（或 `-d`）时才会调用 `imshow` 弹窗**。  
 > 不加该参数时程序只会在终端打印 FPS，看起来像“没有窗口”。
@@ -269,10 +269,3 @@ pkill -f standard_mpc_se
 
 ---
 
-
-## Impovements in progress
-- 高优先级：
-  1. 添加自适应击打角度调整：根据目标运动角速度动态调整击打角度，提高命中率。
-  2. 测试推理池化和推理慢帧丢弃策略的性能
-- 中优先级：
-  1. 自适应kalman滤波器：根据目标运动状态动态调整过程噪声协方差，提高追踪稳定性。

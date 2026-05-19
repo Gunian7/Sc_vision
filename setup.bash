@@ -65,7 +65,7 @@ else
             sudo -E /opt/intel/openvino_2024.6.0/install_dependencies/install_openvino_dependencies.sh
         else
             echo "OpenVINO dependency installer not found; please run it manually in /opt/intel/openvino_2024.6.0"
-        fi
+        fi      
     else
         echo "Extraction failed or unexpected package layout; please inspect /tmp"
     fi
