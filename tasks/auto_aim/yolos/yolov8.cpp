@@ -269,7 +269,7 @@ cv::Mat YOLOV8::get_pattern(const cv::Mat & bgr_img, const Armor & armor) const
 void YOLOV8::save(const Armor & armor) const
 {
   auto file_name = fmt::format("{:%Y-%m-%d_%H-%M-%S}", std::chrono::system_clock::now());
-  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, ARMOR_NAMES[armor.name], file_name);
+  auto img_path = fmt::format("{}/{}_{}.jpg", save_path_, armor.name, file_name);
   cv::imwrite(img_path, armor.pattern);
 }
 
@@ -282,15 +282,15 @@ void YOLOV8::draw_detections(
     auto info = fmt::format(
       "{:.2f} {} {}", armor.confidence, ARMOR_NAMES[armor.name], ARMOR_TYPES[armor.type]);
     tools::draw_points(detection, armor.points, {0, 255, 0});
-    tools::draw_text(detection, info, armor.box.tl() + cv::Point(0, -15), {0, 255, 0});
+    tools::draw_text(detection, info, armor.center, {0, 255, 0});
   }
 
   if (use_roi_) {
     cv::Scalar green(0, 255, 0);
     cv::rectangle(detection, roi_, green, 2);
   }
-  cv::resize(detection, detection, {}, 0.8, 0.8);  // 显示时缩小图片尺寸
-  cv::imshow("detection", detection);
+  cv::resize(detection, detection, {}, 0.5, 0.5);  // 显示时缩小图片尺寸
+  //cv::imshow("detection", detection);
 }
 
 void YOLOV8::sort_keypoints(std::vector<cv::Point2f> & keypoints)
@@ -325,13 +325,6 @@ std::list<Armor> YOLOV8::postprocess(
   double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count)
 {
   return parse(scale, output, bgr_img, frame_count);
-}
-
-bool YOLOV8::get_debug_roi(cv::Rect & roi, bool & active) const
-{
-  roi = roi_;
-  active = use_roi_;
-  return use_roi_;
 }
 
 }  // namespace auto_aim

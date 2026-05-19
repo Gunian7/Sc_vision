@@ -25,8 +25,6 @@ public:
   std::list<Armor> postprocess(
     double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count) override;
 
-  bool get_debug_roi(cv::Rect & roi, bool & active) const override;
-
 private:
   Classifier classifier_;
   Detector detector_;

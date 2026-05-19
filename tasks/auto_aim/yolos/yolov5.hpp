@@ -6,9 +6,6 @@
 #include <openvino/openvino.hpp>
 #include <string>
 #include <vector>
-#include <memory>
-
-#include "tasks/auto_aim/yolos/infer_request_pool.hpp"
 
 #include "tasks/auto_aim/armor.hpp"
 #include "tasks/auto_aim/detector.hpp"
@@ -26,20 +23,10 @@ public:
   std::list<Armor> postprocess(
     double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count) override;
 
-  bool get_debug_roi(cv::Rect & roi, bool & active) const override;
-
 private:
   std::string device_, model_path_;
   std::string save_path_, debug_path_;
   bool debug_, use_roi_, use_traditional_;
-  bool use_dynamic_roi_ = false;
-    int dynamic_roi_shrink_frames_ = 30;
-    int dynamic_roi_lost_frames_ = 3;
-    int consecutive_tracking_frames_ = 0;
-    int consecutive_lost_frames_ = 0;
-    cv::Rect target_roi_;
-    cv::Rect full_roi_;
-    bool dynamic_roi_initialized_ = false;
 
   const int class_num_ = 13;
   const float nms_threshold_ = 0.3;
@@ -48,8 +35,6 @@ private:
 
   ov::Core core_;
   ov::CompiledModel compiled_model_;
-  std::unique_ptr<InferRequestPool> infer_pool_;
-  int num_requests_ = 1;
 
   cv::Rect roi_;
   cv::Point2f offset_;

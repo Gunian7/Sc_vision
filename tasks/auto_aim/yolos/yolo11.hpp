@@ -23,8 +23,6 @@ public:
   std::list<Armor> postprocess(
     double scale, cv::Mat & output, const cv::Mat & bgr_img, int frame_count) override;
 
-  bool get_debug_roi(cv::Rect & roi, bool & active) const override;
-
 private:
   std::string device_, model_path_;
   std::string save_path_, debug_path_;
