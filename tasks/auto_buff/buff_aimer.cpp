@@ -25,8 +25,8 @@ io::Command Aimer::aim(
   io::Command command = {false, false, 0, 0, 0, 0, 0, 0};
   if (target.is_unsolve()) return command;
 
-  // 如果子弹速度小于10，将其设为24
-  if (bullet_speed < 10) bullet_speed = 24;
+  // 如果子弹速度小于10，将其设为24 ？ 
+  if (bullet_speed < 10) bullet_speed = 22.5;
 
   auto now = std::chrono::steady_clock::now();
 

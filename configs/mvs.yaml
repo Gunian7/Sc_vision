@@ -1,6 +1,6 @@
-# enemy_color: "red"
-enemy_color: "blue"
+# enemy_color : "red" 
 
+enemy_color: "blue"
 
 #####-----神经网络参数-----#####
 yolo_name: yolov5
@@ -9,39 +9,23 @@ yolo11_model_path: assets/yolo11.xml
 yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
-device: GPU
-min_confidence: 0.8
+device: CPU
+min_confidence: 0.70
 use_traditional: true
 
 #####-----ROI-----#####
+
 roi: 
-  x: 420
-  y: 50
-  width: 600
-  height: 600
+  x: 260
+  y: 350
+  width: 800
+  height: 500
 
-use_roi: false
+use_roi: true
 
-#####-----USB相机参数-----#####
-image_width: 640
-image_height: 360
-new_image_width: 1280
-new_image_height: 720
-fov_h: 57.7 #87.7
-fov_v: 56.7 
-new_fov_h: 37 #67
-new_fov_v: 40.9
-usb_frame_rate: 60
-usb_exposure: 305 #1-80000______250
-new_usb_exposure: 320
-usb_gamma: 160
-usb_gain: 10 #0-96
-
-#####-----工业相机参数-----#####
-camera_name: "hikrobot"
-exposure_ms: 2
-gain: 16
-vid_pid: "2bdf:0001"
+dynamic_roi: true
+dynamic_roi_shrink_frames: 2
+dynamic_roi_lost_frames: 10
 
 #####-----传统方法参数-----#####
 threshold: 150
@@ -53,88 +37,159 @@ min_armor_ratio: 1
 max_armor_ratio: 5
 max_side_ratio: 1.5
 max_rectangular_error: 25 # degree
-min_confidence: 0.8
-
-#####-----cboard参数-----#####
-quaternion_canid: 0x01
-bullet_speed_canid: 0x110
-send_canid: 0xff
-can_interface: "can0"
 
 #####-----tracker参数-----#####
 min_detect_count: 5
 max_temp_lost_count: 15
-outpost_max_temp_lost_count: 75
+outpost_comming_angle: 70 # degree 前哨站进入视野角度
+outpost_leaving_angle: 30 # degree 前哨站离开视野角度
+outpost_max_temp_lost_count: 15
+
+#### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
 jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
-jump_z_threshold: 0.02 # m 前哨站仍按z跳变判定
-jump_confirm_count: 2
-jump_avg_alpha: 0.5
-jump_fire_cooldown: 0.0 # s
-motion_state_enable: true
-enable_imm: true
-motion_w_low: 1.2 # rad/s fallback角速度阈值：|w|超过后判为constant
-motion_dw_high: 8.0 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
-imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3
-imm_r_yaw: 0.002
-imm_q_slow: [1e-4, 8e-2, 1e-1] # [yaw,w,alpha]
-imm_q_constant: [1e-4, 2e-2, 5e-2] # [yaw,w,alpha]
-imm_q_variable: [2e-4, 2e-1, 8e-1] # [yaw,w,alpha]
-imm_alpha_decay_slow: 0.2
-imm_alpha_decay_constant: 0.5
-imm_dt_min: 0.001
-imm_dt_max: 0.2
-pitch_offset: 0  # degree 2
-comming_angle: 70 # degree
-leaving_angle: 30 # degree
-decision_speed: 7 # rad/s
-high_speed_delay_time: 0.066 # s
-low_speed_delay_time: 0.015 # s
+jump_z_threshold: 0.07 # m 前哨站仍按z跳变判定
+jump_confirm_count: 3
+jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
+jump_fire_cooldown: 0.01 # s 固定延时(不使用动态参数时生效)
+outpost_jump_fire_cooldown: 0.05 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
+jump_min_interval: 0.01 # s 跳变最小间隔
+
+motion_state_enable: true   # 是否启用旋转状态分类（slow/constant/variable），线速度单独输出
+
+# kalman相关参数 
+
+enable_imm: true  # 是否启用IMM，启用后由IMM三模型直接输出旋转状态分类
+motion_w_low: 5.0 # rad/s fallback角速度阈值：|w|超过后判为constant
+motion_dw_high: 6.0 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
+imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和为1): slow/constant/variable
+imm_r_yaw: 0.002 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
+imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
+imm_q_constant: [1e-4, 2e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
+imm_q_variable: [2e-4, 2e-1, 8e-1] # variable模型过程噪声Q[yaw,w,alpha]，通常应最大
+imm_alpha_decay_slow: 0.2 # slow模型下alpha衰减系数，越大角加速度回零越快
+imm_alpha_decay_constant: 0.5 # constant模型下alpha衰减系数，常设高于slow以抑制伪加速度
+imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
+imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
+# 目标过程噪声 角速度/线速度 (你认为运动模型越不准，就把Q调的越大，否则就越小)
+target_process_noise_linear_normal: 100.0  #100
+target_process_noise_angular_normal: 200.0  #400
+target_process_noise_linear_outpost: 10.0
+target_process_noise_angular_outpost: 100.0
+# 目标测量噪声 (你觉得你的识别准吗？不准就给我调大R)
+target_measurement_noise_yaw: 0.005    #0.002
+target_measurement_noise_pitch: 0.002
+# 目标匹配门控阈值（马氏距离平方 d^2）
+target_match_gate_tracked: 12.0     # 越大越宽松，越容易进入追踪，但是不一定准
+target_match_gate_init: 24.0    # 追踪初始化匹配门限，通常设为tracked的2倍或更大
+
+# 形态考核参数（平时别用）
+force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），完整形态考核用
+forced_target_angular_velocity: 2.51 # rad/s
+
+#####-----aimer参数-----#####
+yaw_offset: -1.3  # 增大向左，反之向右
+pitch_offset: -3.3 # 增大向上 反之向下
+comming_angle: 55 # degree 55
+leaving_angle: 20 # degree 20
+comming_angle_high: 30 # degree 高速(角速度大)使用
+leaving_angle_high: 5 # degree 高速(角速度大)使用
+comming_end_angle: 7 # degree 极高速下的最小角度
+leaving_end_angle: 3 # degree 极高速下的最小角度
+speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
+speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
+decision_speed: 9 # rad/s
+use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
+pre_aim_max_delta_angle: 65 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
+outpost_nominal_angular_speed: 2.51327412287 # rad/s 前哨站角速度先验幅值，约等于0.8π，方向继承当前估计w符号
+outpost_nominal_w_blend: 0.2 # [0,1] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
+
+#####-----auto aim fsm参数-----#####
+auto_aim_fsm:
+  enable: true
+  transfer_thresh: 8      # 连续计数阈值，越大切换越稳但更慢
+  # rad/s 
+  single_whole_up: 2.5    # 单板 -> 整车 上行阈值
+  single_whole_down: 1.8  # 整车 -> 单板 下行阈值
+  whole_pair_up: 6.5      # 整车-> 对板 上行阈值
+  whole_pair_down: 5.5    # 对板 -> 整车 下行阈值
+  pair_center_up: 8.0     # 对板 -> 车心 上行阈值
+  pair_center_down: 6.5   # 车心 -> 对板 下行阈值
+
+high_speed_delay_time: -0.05 # s
+low_speed_delay_time: -0.08 # s planner use this value
+outpost_delay_time: 0.0 # s 前哨站专用delay，不走low_speed_delay_time
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
 second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
+outpost_tolerance_deg: 3.0 # degree 前哨站专用：云台yaw跟踪误差容差，越大越容易开火，越小越严格
+outpost_phase_window_deg: 28.0 # degree 前哨站专用：装甲板相对车心允许开火的相位窗口，越大越早/越晚都可能开火
+outpost_yaw_vel_threshold: 2.0 # rad/s 前哨站专用：command.yaw_vel上限，超过认为还在快速甩枪，不开火
 
-#####-----decider参数-----#####
-mode: 1
+camera_name: "mindvision"
+exposure_ms: 8.0
+gamma: 1.0
+gain: 200.0   
+vid_pid: "f622:d132"
 
-#####-----工业相机标定参数-----#####
+
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-# 重投影误差: 0.1322px
-camera_matrix: [1776.9477196851155, 0, 756.31235265560952, 0, 1776.0591253569607, 566.16539069551641, 0, 0, 1]
-distort_coeffs: [-0.08382326954462313, 0.097449270330296239, -0.0012558283068959985, 0.0037372210254148081, 0]
 
-R_camera2gimbal: [0, 0, 1, -1, 0, 0, 0, -1, 0]
-t_camera2gimbal: [0.1, 0, 0.05]
+camera_matrix: [1589.4373322712088, 0.0, 662.228805477449, 0.0, 1586.6633444928955, 520.54936919145, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.05815007752029064, 0.18034098732616488, 0.0029608386250371643, 0.0008841906203098307, 0.0]
 
+
+
+R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]
+t_camera2gimbal: [0.07, 0.0, 0.03]  #0.10 0.07 0.10
+
+#####-----cboard参数-----#####
+quaternion_canid: 0x100
+bullet_speed_canid: 0x101
+send_canid: 0xff
+can_interface: "can0"
+phoenix_angle_unit: rad   # 下位机若发送角度(度)则设为deg，发送弧度则改为rad
+imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
+imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
+use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
+cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
+use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
+
+#####-----目标稳定性参数-----#####
+target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
+target_stabilize_alpha: 0.3            # 平滑系数(0.0~1.0)，越小越平滑(推荐0.1~0.5)，0表示完全保持上一值，1表示完全新值
+enable_target_stabilize: false          # 是否启用平滑过渡机制
+
+#####-----plotter参数-----#####
+plotter_host: "127.0.0.1"
+plotter_port: 9870
+
+#####-----gimbal参数-----#####
+com_port: "/dev/gimbal"
+yaw_kp: 0
+yaw_kd: 0
+pitch_kp: 0
+pitch_kd: 0
+
+#####-----planner-----#####
+fire_thresh: 0.0035
+# R越大越平滑/Q越大越激进
+max_yaw_acc: 100
+Q_yaw: [9e6,1e3]   # [角度误差惩罚, 角速度误差惩罚]
+R_yaw: [1]
+
+max_pitch_acc: 50
+Q_pitch: [8e6,1e3]   # [角度误差惩罚, 角速度误差惩罚]
+R_pitch: [1]
 
 #####-----buff_detector参数-----#####
-detect:
-  contrast: 1
-  brightness: 
-    blue: -120
-    red: -100
-  brightness_threshold:
-    blue: 120
-    red: 80
-  morphology_size:
-    blue: 3
-    red: 2
-  dilate_size: 1
-  # canny_low_threshold: 100
-  # canny_high_threshold: 180
-  # approx_epsilon: 1.0
-  R_contours_min_area: 1
-  R_contours_max_area: 600
-  fanblades_head_contours_min_area: 300
-  fanblades_head_contours_max_area: 8000
-  fanblades_body_contours_min_area: 1000
-  fanblades_body_contours_max_area: 4000
-  standard_fanblade_path: ./assets/standard_fanblade.jpg
+model: "assets/yolo11_buff_int8.xml"
 
 #####-----buff_aimer参数-----#####
-aim_time: 0.200 # s
-wait_time: 0.050 # s
-predict_time: 0.300 # s
+fire_gap_time: 0.700   # s
+predict_time: 0.120     # s
+
+bullet_speed: 21.9  # m/s

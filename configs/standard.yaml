@@ -1,5 +1,5 @@
-# enemy_color : "red" 
-enemy_color: "blue"
+enemy_color : "red" 
+# enemy_color: "blue"
 
 #####-----神经网络参数-----#####
 yolo_name: yolov5
@@ -56,7 +56,7 @@ motion_state_enable: true  # 是否启用运动状态判定，启用后会根据
 enable_imm: true  # 是否启用IMM，启用后会根据目标运动状态在多个卡尔曼滤波器间切换
 motion_w_low: 5.0 # rad/s 角速度低阈值(滞回下边界)，用于区分慢速/快速旋转
 
-motion_dw_high: 3.0 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
+motion_dw_high: 0.5 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
 imm_r_yaw: 0.02 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
 imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
@@ -93,7 +93,7 @@ leaving_end_angle: 3 # degree 极高速下的最小角度
 speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
 speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
 decision_speed: 9 # rad/s
-use_center_aim_when_high_speed: false # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
+use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
 pre_aim_max_delta_angle: 65 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
 outpost_nominal_angular_speed: 2.51327412287 # rad/s 前哨站角速度先验幅值，约等于0.8π，方向继承当前估计w符号
 outpost_nominal_w_blend: 0.2 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
@@ -132,8 +132,8 @@ vid_pid: "f622:0001"  # 记得看相机pid
 
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-# camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
-# distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
+camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
 
 # K = [2085.1, 0, 660.6695,0, 2081.9, 517.3946, 0, 0, 1]
 # D = [-0.0596, 0.3475,0.005814560627238968, -0.002087985180130278, 0.0]
@@ -187,8 +187,10 @@ R_pitch: [1]
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"
 
+# 明显超时，然后瞄准经常飘动，应该是相机不断重启，经常提前预瞄，需要减少预瞄时间，需要更多参数 
+
 #####-----buff_aimer参数-----#####
 fire_gap_time: 0.700   # s
-predict_time: 0.120     # s
+predict_time: 0.05   # s
 
 bullet_speed: 22.5  # m/s

@@ -9,7 +9,7 @@
 # vid_pid: "2bdf:0001"
 
 camera_name: "mindvision"
-exposure_ms: 3
+exposure_ms: 4
 gamma: 1.0  # 伽马校正
 gain: 10.0
-vid_pid: "f622:0001"
+vid_pid: "f622:d132"
