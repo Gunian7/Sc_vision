@@ -107,7 +107,8 @@ int main(int argc, char * argv[])
     else if (mode == io::Mode::small_buff || mode == io::Mode::big_buff) {
       buff_solver.set_R_gimbal2world(q);
 
-      auto power_runes = buff_detector.detect(img);
+      auto power_runes =
+        mode == io::Mode::big_buff ? buff_detector.detect_big(img) : buff_detector.detect(img);
 
       buff_solver.solve(power_runes);
 

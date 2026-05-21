@@ -25,28 +25,13 @@ std::vector<YOLO11_BUFF::Object> YOLO11_BUFF::get_multicandidateboxes(cv::Mat & 
 
   /// 预处理
 
-  // const float factor = fill_tensor_data_image(input_tensor, image);  // 填充图片到合适的input size
-
   if (image.empty()) {
     tools::logger()->warn("Empty img!, camera drop!");
     return std::vector<YOLO11_BUFF::Object> ();
   }
 
-  cv::Mat bgr_img = image;
-
-  auto x_scale = static_cast<double>(640) / bgr_img.rows;
-  auto y_scale = static_cast<double>(640) / bgr_img.cols;
-  auto scale = std::min(x_scale, y_scale);
-  auto h = static_cast<int>(bgr_img.rows * scale);
-  auto w = static_cast<int>(bgr_img.cols * scale);
-
-  double factor = scale;  
-
-  // preproces
-  auto input = cv::Mat(640, 640, CV_8UC3, cv::Scalar(0, 0, 0));
-  auto roi = cv::Rect(0, 0, w, h);
-  cv::resize(bgr_img, input(roi), {w, h});
-  ov::Tensor input_tensor(ov::element::u8, {1, 640, 640, 3}, input.data);
+  const float factor = fill_tensor_data_image(input_tensor, image);  // 填充图片到合适的input size
+  infer_request.set_input_tensor(input_tensor);
 
   /// 执行推理计算
   infer_request.infer();
@@ -85,7 +70,7 @@ std::vector<YOLO11_BUFF::Object> YOLO11_BUFF::get_multicandidateboxes(cv::Mat & 
 
       // 获取关键点
       std::vector<float> keypoints;
-      cv::Mat kpts = det_output.col(i).rowRange(NUM_POINTS, 15);
+      cv::Mat kpts = det_output.col(i).rowRange(5, 5 + NUM_POINTS * 2);
       for (int j = 0; j < NUM_POINTS; ++j) {
         const float x = kpts.at<float>(j * 2 + 0, 0) * factor;
         const float y = kpts.at<float>(j * 2 + 1, 0) * factor;
@@ -150,6 +135,7 @@ std::vector<YOLO11_BUFF::Object> YOLO11_BUFF::get_onecandidatebox(cv::Mat & imag
 
   /// 预处理
   const float factor = fill_tensor_data_image(input_tensor, image);  // 填充图片到合适的input size
+  infer_request.set_input_tensor(input_tensor);
 
   /// 执行推理计算
 

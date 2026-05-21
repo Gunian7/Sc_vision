@@ -19,6 +19,8 @@ public:
 
   std::optional<PowerRune> detect_24(cv::Mat & bgr_img);
 
+  std::optional<PowerRune> detect_big(cv::Mat & bgr_img);
+
   std::optional<PowerRune> detect(cv::Mat & bgr_img);
 
 std::optional<PowerRune> detect_debug(cv::Mat & bgr_img, cv::Point2f v);

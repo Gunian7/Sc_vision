@@ -122,6 +122,43 @@ std::optional<PowerRune> Buff_Detector::detect_24(cv::Mat & bgr_img)
   return P;
 }
 
+std::optional<PowerRune> Buff_Detector::detect_big(cv::Mat & bgr_img)
+{
+  /// onnx 模型检测
+
+  std::vector<YOLO11_BUFF::Object> results = MODE_.get_multicandidateboxes(bgr_img);
+
+  /// 处理未获得的情况
+
+  if (results.empty()) {
+    handle_lose();
+    return std::nullopt;
+  }
+
+  /// results转扇叶FanBlade
+
+  std::vector<FanBlade> fanblades;
+  for (auto & result : results) fanblades.emplace_back(FanBlade(result.kpt, result.kpt[4], _light));
+
+  /// 生成PowerRune
+  auto r_center = get_r_center(fanblades, bgr_img);
+  cv::Point2f screen_center(bgr_img.cols * 0.5f, bgr_img.rows * 0.5f);
+  PowerRune powerrune(fanblades, r_center, last_powerrune_, BIG, screen_center);
+
+  /// handle error
+  if (powerrune.is_unsolve()) {
+    handle_lose();
+    return std::nullopt;
+  }
+
+  status_ = TRACK;
+  lose_ = 0;
+  std::optional<PowerRune> P;
+  P.emplace(powerrune);
+  last_powerrune_ = P;
+  return P;
+}
+
 std::optional<PowerRune> Buff_Detector::detect(cv::Mat & bgr_img)
 {
   /// onnx 模型检测

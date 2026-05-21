@@ -18,13 +18,29 @@ FanBlade::FanBlade(FanBlade_type t) : type(t)
 }
 
 PowerRune::PowerRune(
-  std::vector<FanBlade> & ts, const cv::Point2f center, std::optional<PowerRune> last_powerrune)
+  std::vector<FanBlade> & ts, const cv::Point2f center, std::optional<PowerRune> last_powerrune,
+  PowerRune_type rune_type, cv::Point2f screen_center)
 : r_center(center), light_num(ts.size())
 {
   /// 找出target
 
+  // 大符允许两片合法亮扇叶，优先锁定离屏幕中心最近的一片。
+  if (rune_type == BIG && light_num == 2) {
+    if (screen_center.x < 0 || screen_center.y < 0) screen_center = r_center;
+    auto target_fanblade_it = ts.begin();
+    float min_distance = norm(ts[0].center - screen_center);
+    for (auto it = ts.begin(); it != ts.end(); ++it) {
+      float distance = norm(it->center - screen_center);
+      if (distance < min_distance) {
+        min_distance = distance;
+        target_fanblade_it = it;
+      }
+    }
+    target_fanblade_it->type = _target;
+    std::iter_swap(ts.begin(), target_fanblade_it);
+  }
   // 只有一个fanblade，就为target
-  if (light_num == 1) ts[0].type = _target;
+  else if (light_num == 1) ts[0].type = _target;
   // 没有新亮起来的fanblade
   else if (last_powerrune.has_value() && ts.size() == last_powerrune.value().light_num) {
     auto last_target_center = last_powerrune.value().fanblades[0].center;
