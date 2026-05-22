@@ -99,8 +99,8 @@ io::Command Aimer::aim(
   if (target.name == ArmorName::outpost) {
     delay_time = outpost_delay_time_;
   } else {
-    delay_time =
-      std::abs(target.ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  delay_time =
+    std::abs(target.imm_w()) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
   }
 
   // tools::logger()->info(
@@ -189,7 +189,7 @@ io::Command Aimer::aim(
   auto final_ekf_x = final_target.ekf_x();
   const bool center_mode = fsm_enable_
                              ? (fsm_state_ == AutoAimFsm::AIM_WHOLE_CAR_CENTER)
-                             : (std::abs(final_ekf_x[7]) > decision_speed_);
+                             : (std::abs(target.imm_w()) > decision_speed_);
   double yaw;
   if (use_center_aim_when_high_speed_ && center_mode) {
     yaw = std::atan2(final_ekf_x[2], final_ekf_x[0]) + yaw_offset_;
@@ -302,7 +302,7 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
       coming_angle = outpost_comming_angle_;
       leaving_angle = outpost_leaving_angle_;
     } else {
-      const double abs_w = std::abs(ekf_x[7]);
+      const double abs_w = std::abs(spin_w);
       if (abs_w < speed_angle_) {
         coming_angle = comming_angle_;
         leaving_angle = leaving_angle_;
@@ -320,8 +320,8 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
     for (std::size_t i = 0; i < armor_num; i++) {
       if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
       if (std::abs(effective_delta_angle_list[i]) > coming_angle) continue;
-      if (ekf_x[7] > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
-      if (ekf_x[7] < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+      if (spin_w > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
+      if (spin_w < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
     }
 
     return {false, armor_xyza_list[0]};
@@ -390,7 +390,7 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
     coming_angle = outpost_comming_angle_;
     leaving_angle = outpost_leaving_angle_;
   } else {
-    const double abs_w = std::abs(ekf_x[7]);
+    const double abs_w = std::abs(spin_w);
     if (abs_w < speed_angle_) {
       coming_angle = comming_angle_;
       leaving_angle = leaving_angle_;
@@ -409,8 +409,8 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
   for (std::size_t i = 0; i < armor_num; i++) {
     if (std::abs(effective_delta_angle_list[i]) > pre_aim_max_delta_angle_) continue;
     if (std::abs(effective_delta_angle_list[i]) > coming_angle) continue;
-    if (ekf_x[7] > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
-    if (ekf_x[7] < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
+      if (spin_w > 0 && effective_delta_angle_list[i] < leaving_angle) return {true, armor_xyza_list[i]};
+      if (spin_w < 0 && effective_delta_angle_list[i] > -leaving_angle) return {true, armor_xyza_list[i]};
   }
 
   std::vector<int> all_ids;

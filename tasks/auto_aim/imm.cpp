@@ -15,18 +15,18 @@ namespace
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kEps = 1e-12;
 constexpr double kDefaultMuMin = 1e-4;
-constexpr int kYawIndex = 6;
-constexpr int kWIndex = 7;
-constexpr int kAlphaIndex = 11;
 }  // namespace
 
 IMMFilter::IMMFilter() : initialized_(false)
 {
   params_.transition << 0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90;
   params_.r_yaw = 2e-3;
-  params_.q_slow << 1e-4, 8e-2, 1e-1;
-  params_.q_constant << 1e-4, 2e-2, 5e-2;
-  params_.q_variable << 2e-4, 2e-1, 8e-1;
+  params_.q_v_slow = 8e-2;
+  params_.q_v_constant = 2e-2;
+  params_.q_v_variable = 2e-1;
+  params_.q_alpha_slow = 1e-1;
+  params_.q_alpha_constant = 5e-2;
+  params_.q_alpha_variable = 8e-1;
   params_.alpha_decay_slow = 0.2;
   params_.alpha_decay_constant = 0.5;
   params_.dt_min = 1e-3;
@@ -49,29 +49,30 @@ void IMMFilter::set_params(const Params & params)
   params_.mu_min = std::clamp(params_.mu_min, 0.0, 1.0 / static_cast<double>(kModelCount));
 }
 
-void IMMFilter::initialize(const Eigen::VectorXd & x0, const Eigen::MatrixXd & P0)
+void IMMFilter::initialize(double yaw, double v_yaw, double alpha_yaw, double P_yaw, double P_v, double P_alpha)
 {
   initialized_ = true;
-  fused_x_ = x0;
-  fused_P_ = P0;
-  if (fused_x_.size() > kYawIndex) {
-    fused_x_[kYawIndex] = normalize_angle(fused_x_[kYawIndex]);
-  }
+  fused_yaw_ = yaw;
+  fused_v_yaw_ = v_yaw;
+  fused_alpha_yaw_ = alpha_yaw;
+  fused_P_yaw_ = std::max(kEps, P_yaw);
+  fused_P_v_ = std::max(kEps, P_v);
+  fused_P_alpha_ = std::max(kEps, P_alpha);
 
   const double mu0 = 1.0 / static_cast<double>(kModelCount);
   c_bar_.fill(mu0);
 
   for (size_t i = 0; i < kModelCount; ++i) {
     auto & model = models_[i];
-    model.x = x0;
-    model.P = P0;
+    model.x = Eigen::Vector3d(yaw, v_yaw, alpha_yaw);
+    model.P = Eigen::Matrix3d::Identity();
+    model.P(0, 0) = fused_P_yaw_;
+    model.P(1, 1) = fused_P_v_;
+    model.P(2, 2) = fused_P_alpha_;
     model.mu = locked_model_index_ ? (i == *locked_model_index_ ? 1.0 : 0.0) : mu0;
     model.likelihood = 1.0;
-    model.innovation = Eigen::VectorXd::Zero(4);
-    model.innovation_cov = Eigen::MatrixXd::Zero(4, 4);
-    if (model.x.size() > kYawIndex) {
-      model.x[kYawIndex] = normalize_angle(model.x[kYawIndex]);
-    }
+    model.innovation = 0.0;
+    model.innovation_var = 0.0;
   }
 }
 
@@ -79,8 +80,12 @@ void IMMFilter::reset()
 {
   initialized_ = false;
   locked_model_index_.reset();
-  fused_x_.resize(0);
-  fused_P_.resize(0, 0);
+  fused_yaw_ = 0.0;
+  fused_v_yaw_ = 0.0;
+  fused_alpha_yaw_ = 0.0;
+  fused_P_yaw_ = 0.0;
+  fused_P_v_ = 0.0;
+  fused_P_alpha_ = 0.0;
   c_bar_.fill(0.0);
 
   for (auto & model : models_) {
@@ -88,8 +93,8 @@ void IMMFilter::reset()
     model.P.resize(0, 0);
     model.mu = 0.0;
     model.likelihood = 0.0;
-    model.innovation.resize(0);
-    model.innovation_cov.resize(0, 0);
+    model.innovation = 0.0;
+    model.innovation_var = 0.0;
   }
 }
 
@@ -156,57 +161,27 @@ double IMMFilter::safe_det(const Eigen::MatrixXd & matrix)
   return std::max(kEps, det);
 }
 
-Eigen::VectorXd IMMFilter::blend_state(
-  const std::array<Eigen::VectorXd, kModelCount> & states,
-  const std::array<double, kModelCount> & weights, int yaw_index)
-{
-  if (states[0].size() == 0) {
-    return {};
-  }
-
-  const int dim = states[0].size();
-  Eigen::VectorXd mixed = Eigen::VectorXd::Zero(dim);
-  double c = 0.0;
-  double s = 0.0;
-  double weight_sum = 0.0;
-
-  for (size_t i = 0; i < kModelCount; ++i) {
-    if (states[i].size() != dim || weights[i] <= 0.0) {
-      continue;
-    }
-    mixed += weights[i] * states[i];
-    c += weights[i] * std::cos(states[i][yaw_index]);
-    s += weights[i] * std::sin(states[i][yaw_index]);
-    weight_sum += weights[i];
-  }
-
-  if (weight_sum <= kEps) {
-    return states[0];
-  }
-
-  mixed[yaw_index] = std::atan2(s, c);
-  return mixed;
-}
-
-Eigen::VectorXd IMMFilter::subtract_state(
-  const Eigen::VectorXd & lhs, const Eigen::VectorXd & rhs, int yaw_index)
-{
-  Eigen::VectorXd delta = lhs - rhs;
-  if (delta.size() > yaw_index) {
-    delta[yaw_index] = normalize_angle(delta[yaw_index]);
-  }
-  return delta;
-}
-
-Eigen::Vector3d IMMFilter::model_q(size_t model_index) const
+double IMMFilter::model_q_v(size_t model_index) const
 {
   switch (model_index) {
     case 0:
-      return params_.q_slow;
+      return params_.q_v_slow;
     case 1:
-      return params_.q_constant;
+      return params_.q_v_constant;
     default:
-      return params_.q_variable;
+      return params_.q_v_variable;
+  }
+}
+
+double IMMFilter::model_q_alpha(size_t model_index) const
+{
+  switch (model_index) {
+    case 0:
+      return params_.q_alpha_slow;
+    case 1:
+      return params_.q_alpha_constant;
+    default:
+      return params_.q_alpha_variable;
   }
 }
 
@@ -222,19 +197,7 @@ double IMMFilter::alpha_decay(size_t model_index) const
   }
 }
 
-SpinModel IMMFilter::spin_model(size_t model_index) const
-{
-  switch (model_index) {
-    case 0:
-      return SpinModel::slow;
-    case 1:
-      return SpinModel::constant;
-    default:
-      return SpinModel::variable;
-  }
-}
-
-void IMMFilter::mix_states(int yaw_index)
+void IMMFilter::mix_states()
 {
   std::array<ModelState, kModelCount> prior = models_;
 
@@ -256,24 +219,29 @@ void IMMFilter::mix_states(int yaw_index)
       mix_weights.fill(1.0 / static_cast<double>(kModelCount));
     }
 
-    std::array<Eigen::VectorXd, kModelCount> states{
-      prior[0].x, prior[1].x, prior[2].x};
-
-    Eigen::VectorXd mixed_x = blend_state(states, mix_weights, yaw_index);
-    Eigen::MatrixXd mixed_P = Eigen::MatrixXd::Zero(prior[0].P.rows(), prior[0].P.cols());
-
+    // Mix 3D states [yaw, v_yaw, alpha_yaw]
+    double mixed_yaw = 0.0;
+    double mixed_v = 0.0;
+    double mixed_alpha = 0.0;
     for (size_t i = 0; i < kModelCount; ++i) {
-      Eigen::VectorXd dx = subtract_state(prior[i].x, mixed_x, yaw_index);
+      mixed_yaw += mix_weights[i] * prior[i].x[kYawIdx];
+      mixed_v += mix_weights[i] * prior[i].x[kVIdx];
+      mixed_alpha += mix_weights[i] * prior[i].x[kAlphaIdx];
+    }
+
+    Eigen::Matrix3d mixed_P = Eigen::Matrix3d::Zero();
+    for (size_t i = 0; i < kModelCount; ++i) {
+      Eigen::Vector3d dx = prior[i].x - Eigen::Vector3d(mixed_yaw, mixed_v, mixed_alpha);
       mixed_P += mix_weights[i] * (prior[i].P + dx * dx.transpose());
     }
 
-    models_[j].x = mixed_x;
+    models_[j].x = Eigen::Vector3d(mixed_yaw, mixed_v, mixed_alpha);
     models_[j].P = 0.5 * (mixed_P + mixed_P.transpose());
     models_[j].mu = c_bar_[j];
   }
 }
 
-void IMMFilter::fuse_output(int yaw_index)
+void IMMFilter::fuse_output()
 {
   if (!initialized_ || models_[0].x.size() == 0) {
     return;
@@ -281,11 +249,12 @@ void IMMFilter::fuse_output(int yaw_index)
 
   if (locked_model_index_) {
     const size_t j = *locked_model_index_;
-    fused_x_ = models_[j].x;
-    fused_P_ = models_[j].P;
-    if (fused_x_.size() > yaw_index) {
-      fused_x_[yaw_index] = normalize_angle(fused_x_[yaw_index]);
-    }
+    fused_yaw_ = models_[j].x[kYawIdx];
+    fused_v_yaw_ = models_[j].x[kVIdx];
+    fused_alpha_yaw_ = models_[j].x[kAlphaIdx];
+    fused_P_yaw_ = models_[j].P(kYawIdx, kYawIdx);
+    fused_P_v_ = models_[j].P(kVIdx, kVIdx);
+    fused_P_alpha_ = models_[j].P(kAlphaIdx, kAlphaIdx);
     return;
   }
 
@@ -304,50 +273,92 @@ void IMMFilter::fuse_output(int yaw_index)
     }
   }
 
-  std::array<Eigen::VectorXd, kModelCount> states{
-    models_[0].x, models_[1].x, models_[2].x};
-
-  fused_x_ = blend_state(states, weights, yaw_index);
-  fused_P_ = Eigen::MatrixXd::Zero(models_[0].P.rows(), models_[0].P.cols());
-
+  // Fuse yaw (using circular mean)
+  double sin_sum = 0.0, cos_sum = 0.0;
   for (size_t i = 0; i < kModelCount; ++i) {
-    Eigen::VectorXd dx = subtract_state(models_[i].x, fused_x_, yaw_index);
-    fused_P_ += weights[i] * (models_[i].P + dx * dx.transpose());
+    sin_sum += weights[i] * std::sin(models_[i].x[kYawIdx]);
+    cos_sum += weights[i] * std::cos(models_[i].x[kYawIdx]);
+  }
+  fused_yaw_ = std::atan2(sin_sum, cos_sum);
+  // Normalize fused yaw
+  fused_yaw_ = normalize_angle(fused_yaw_);
+
+  // Fuse v_yaw
+  fused_v_yaw_ = 0.0;
+  for (size_t i = 0; i < kModelCount; ++i) {
+    fused_v_yaw_ += weights[i] * models_[i].x[kVIdx];
   }
 
-  fused_P_ = 0.5 * (fused_P_ + fused_P_.transpose());
-  if (fused_x_.size() > yaw_index) {
-    fused_x_[yaw_index] = normalize_angle(fused_x_[yaw_index]);
+  // Fuse alpha_yaw
+  fused_alpha_yaw_ = 0.0;
+  for (size_t i = 0; i < kModelCount; ++i) {
+    fused_alpha_yaw_ += weights[i] * models_[i].x[kAlphaIdx];
+  }
+
+  // Fuse covariance for yaw
+  fused_P_yaw_ = 0.0;
+  for (size_t i = 0; i < kModelCount; ++i) {
+    double dyaw = normalize_angle(models_[i].x[kYawIdx] - fused_yaw_);
+    fused_P_yaw_ += weights[i] * (models_[i].P(kYawIdx, kYawIdx) + dyaw * dyaw);
+  }
+
+  // Fuse covariance for v_yaw
+  fused_P_v_ = 0.0;
+  for (size_t i = 0; i < kModelCount; ++i) {
+    double dv = models_[i].x[kVIdx] - fused_v_yaw_;
+    fused_P_v_ += weights[i] * (models_[i].P(kVIdx, kVIdx) + dv * dv);
+  }
+
+  // Fuse covariance for alpha_yaw
+  fused_P_alpha_ = 0.0;
+  for (size_t i = 0; i < kModelCount; ++i) {
+    double da = models_[i].x[kAlphaIdx] - fused_alpha_yaw_;
+    fused_P_alpha_ += weights[i] * (models_[i].P(kAlphaIdx, kAlphaIdx) + da * da);
   }
 }
 
-void IMMFilter::predict(const Target & target, double dt)
+void IMMFilter::predict(double dt)
 {
   if (!initialized_) {
-    initialize(target.ekf_x(), target.ekf().P);
+    return;
   }
 
   dt = std::clamp(dt, params_.dt_min, params_.dt_max);
 
   if (locked_model_index_) {
     const size_t j = *locked_model_index_;
-    Eigen::MatrixXd F = target.state_transition_matrix(dt, spin_model(j));
-    Eigen::VectorXd x_pred = target.predict_state(models_[j].x, dt, spin_model(j));
+    auto & model = models_[j];
 
-    if (spin_model(j) != SpinModel::variable) {
-      const double decay = alpha_decay(j);
-      F(kAlphaIndex, kAlphaIndex) = decay;
-      x_pred[kAlphaIndex] = decay * models_[j].x[kAlphaIndex];
-    }
+    const double decay = alpha_decay(j);
+    const double yaw = model.x[kYawIdx];
+    const double v = model.x[kVIdx];
+    const double alpha = model.x[kAlphaIdx] * decay;
 
-    x_pred[kYawIndex] = normalize_angle(x_pred[kYawIndex]);
-    Eigen::MatrixXd Q = target.process_noise_matrix(dt, model_q(j), spin_model(j));
-    Eigen::MatrixXd P_pred = F * models_[j].P * F.transpose() + Q;
+    // CA model: yaw += v*dt + 0.5*alpha*dt^2, v += alpha*dt, alpha *= decay
+    const double dt2 = dt * dt;
+    double yaw_pred = yaw + v * dt + 0.5 * alpha * dt2;
+    double v_pred = v + alpha * dt;
+    double alpha_pred = alpha * decay;
 
-    models_[j].x = x_pred;
-    models_[j].P = 0.5 * (P_pred + P_pred.transpose());
-    models_[j].mu = 1.0;
-    models_[j].likelihood = 1.0;
+    // 3x3 state transition matrix
+    Eigen::Matrix3d F = Eigen::Matrix3d::Identity();
+    F(kYawIdx, kVIdx) = dt;
+    F(kYawIdx, kAlphaIdx) = 0.5 * dt2;
+    F(kVIdx, kAlphaIdx) = dt;
+    F(kAlphaIdx, kAlphaIdx) = decay;
+
+    // 3x3 process noise (diagonal)
+    Eigen::Matrix3d Q = Eigen::Matrix3d::Zero();
+    Q(kYawIdx, kYawIdx) = std::max(0.0, model_q_v(j)) * dt;
+    Q(kVIdx, kVIdx) = std::max(0.0, model_q_v(j));
+    Q(kAlphaIdx, kAlphaIdx) = std::max(0.0, model_q_alpha(j));
+
+    Eigen::Matrix3d P_pred = F * model.P * F.transpose() + Q;
+
+    model.x = Eigen::Vector3d(yaw_pred, v_pred, alpha_pred);
+    model.P = 0.5 * (P_pred + P_pred.transpose());
+    model.mu = 1.0;
+    model.likelihood = 1.0;
 
     for (size_t i = 0; i < kModelCount; ++i) {
       if (i == j) {
@@ -356,95 +367,169 @@ void IMMFilter::predict(const Target & target, double dt)
       models_[i].mu = 0.0;
     }
 
-    fused_x_ = models_[j].x;
-    fused_P_ = models_[j].P;
-    if (fused_x_.size() > kYawIndex) {
-      fused_x_[kYawIndex] = normalize_angle(fused_x_[kYawIndex]);
-    }
+    fused_yaw_ = model.x[kYawIdx];
+    fused_v_yaw_ = model.x[kVIdx];
+    fused_alpha_yaw_ = model.x[kAlphaIdx];
+    fused_P_yaw_ = model.P(kYawIdx, kYawIdx);
+    fused_P_v_ = model.P(kVIdx, kVIdx);
+    fused_P_alpha_ = model.P(kAlphaIdx, kAlphaIdx);
     return;
   }
 
-  mix_states(kYawIndex);
+  mix_states();
 
   for (size_t j = 0; j < kModelCount; ++j) {
-    Eigen::MatrixXd F = target.state_transition_matrix(dt, spin_model(j));
-    Eigen::VectorXd x_pred = target.predict_state(models_[j].x, dt, spin_model(j));
+    auto & model = models_[j];
+    const double decay = alpha_decay(j);
+    const double yaw = model.x[kYawIdx];
+    const double v = model.x[kVIdx];
+    const double alpha = model.x[kAlphaIdx] * decay;
 
-    if (spin_model(j) != SpinModel::variable) {
-      const double decay = alpha_decay(j);
-      F(kAlphaIndex, kAlphaIndex) = decay;
-      x_pred[kAlphaIndex] = decay * models_[j].x[kAlphaIndex];
-    }
+    // CA model for all 3 models
+    const double dt2 = dt * dt;
+    double yaw_pred = yaw + v * dt + 0.5 * alpha * dt2;
+    double v_pred = v + alpha * dt;
+    double alpha_pred = alpha * decay;
 
-    x_pred[kYawIndex] = normalize_angle(x_pred[kYawIndex]);
-    Eigen::MatrixXd Q = target.process_noise_matrix(dt, model_q(j), spin_model(j));
-    Eigen::MatrixXd P_pred = F * models_[j].P * F.transpose() + Q;
+    // 3x3 state transition matrix
+    Eigen::Matrix3d F = Eigen::Matrix3d::Identity();
+    F(kYawIdx, kVIdx) = dt;
+    F(kYawIdx, kAlphaIdx) = 0.5 * dt2;
+    F(kVIdx, kAlphaIdx) = dt;
+    F(kAlphaIdx, kAlphaIdx) = decay;
 
-    models_[j].x = x_pred;
-    models_[j].P = 0.5 * (P_pred + P_pred.transpose());
-    models_[j].mu = c_bar_[j];
-    models_[j].likelihood = 1.0;
+    // 3x3 process noise (diagonal)
+    Eigen::Matrix3d Q = Eigen::Matrix3d::Zero();
+    Q(kYawIdx, kYawIdx) = std::max(0.0, model_q_v(j)) * dt;
+    Q(kVIdx, kVIdx) = std::max(0.0, model_q_v(j));
+    Q(kAlphaIdx, kAlphaIdx) = std::max(0.0, model_q_alpha(j));
+
+    Eigen::Matrix3d P_pred = F * model.P * F.transpose() + Q;
+
+    model.x = Eigen::Vector3d(yaw_pred, v_pred, alpha_pred);
+    model.P = 0.5 * (P_pred + P_pred.transpose());
+    model.mu = c_bar_[j];
+    model.likelihood = 1.0;
   }
 
-  fuse_output(kYawIndex);
+  fuse_output();
 }
 
-bool IMMFilter::update(const Target & target, const Armor & armor, int armor_id)
+bool IMMFilter::update(double observed_yaw, double r_yaw)
 {
   if (!initialized_) {
     return false;
   }
 
-  const Eigen::Vector4d z = target.measurement_from_armor(armor);
-  Eigen::MatrixXd R = target.measurement_noise_matrix(armor);
-  if (R.rows() > 3 && R.cols() > 3) {
-    R(3, 3) = std::max(R(3, 3), params_.r_yaw);
-  }
+  const double r = std::max(kEps, r_yaw);
 
   if (locked_model_index_) {
     const size_t j = *locked_model_index_;
-    Eigen::MatrixXd H = target.h_jacobian(models_[j].x, armor_id);
-    Eigen::Vector4d z_pred = target.predicted_measurement(models_[j].x, armor_id);
-    Eigen::VectorXd innovation = target.measurement_subtract(z, z_pred);
-    Eigen::MatrixXd S = H * models_[j].P * H.transpose() + R;
-    S = 0.5 * (S + S.transpose());
+    auto & model = models_[j];
 
-    models_[j].innovation = innovation;
-    models_[j].innovation_cov = S;
+    // H = [1, 0, 0] - observe yaw position
+    double innovation = normalize_angle(observed_yaw - model.x[kYawIdx]);
+    const double S = model.P(kYawIdx, kYawIdx) + r;
 
-    Eigen::LDLT<Eigen::MatrixXd> ldlt(S);
-    if (ldlt.info() != Eigen::Success) {
-      return false;
-    }
+    model.innovation = innovation;
+    model.innovation_var = S;
 
-    const Eigen::VectorXd solved_innovation = ldlt.solve(innovation);
-    const double mahalanobis = innovation.transpose() * solved_innovation;
-    const double det_s = safe_det(S);
-    const double norm =
-      std::pow(2.0 * kPi, static_cast<double>(z.size())) * std::max(det_s, kEps);
-    double likelihood = std::exp(-0.5 * std::max(0.0, mahalanobis)) / std::sqrt(norm);
+    // Kalman gain for 3x1 H = [1, 0, 0]
+    const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
+    const double K_v = model.P(kVIdx, kYawIdx) / S;
+    const double K_alpha = model.P(kAlphaIdx, kYawIdx) / S;
 
+    // Update state
+    double yaw_upd = normalize_angle(model.x[kYawIdx] + K_yaw * innovation);
+    double v_upd = model.x[kVIdx] + K_v * innovation;
+    double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
+
+    // Joseph form covariance update (3x3)
+    // I - K*H = I - [K;0;0] = [[1-K0, 0, 0], [-K1, 1, 0], [-K2, 0, 1]]
+    const double I_KH_00 = 1.0 - K_yaw;
+    const double I_KH_10 = -K_v;
+    const double I_KH_20 = -K_alpha;
+
+    // P_new = (I-KH) * P * (I-KH)^T + K * R * K^T
+    // R is scalar r, K*R*K^T = r * K * K^T
+    Eigen::Matrix3d P_upd;
+    // Row 0
+    P_upd(0, 0) = I_KH_00 * model.P(0, 0) * I_KH_00 +
+                  I_KH_00 * model.P(0, 1) * I_KH_10 +
+                  I_KH_00 * model.P(0, 2) * I_KH_20 +
+                  K_yaw * r * K_yaw;
+    P_upd(0, 1) = I_KH_00 * model.P(0, 0) * (-K_v) +
+                  I_KH_00 * model.P(0, 1) * 1.0 +
+                  I_KH_00 * model.P(0, 2) * 0.0 +
+                  K_yaw * r * K_v;
+    P_upd(0, 2) = I_KH_00 * model.P(0, 0) * (-K_alpha) +
+                  I_KH_00 * model.P(0, 1) * 0.0 +
+                  I_KH_00 * model.P(0, 2) * 1.0 +
+                  K_yaw * r * K_alpha;
+    // Row 1
+    P_upd(1, 0) = I_KH_10 * model.P(0, 0) * I_KH_00 +
+                  1.0 * model.P(1, 0) * I_KH_00 +
+                  0.0 * model.P(2, 0) * I_KH_00 +
+                  K_v * r * K_yaw;
+    P_upd(1, 1) = I_KH_10 * model.P(0, 0) * (-K_v) +
+                  1.0 * model.P(1, 0) * (-K_v) +
+                  0.0 * model.P(2, 0) * (-K_v) +
+                  I_KH_10 * model.P(0, 1) * 1.0 +
+                  1.0 * model.P(1, 1) * 1.0 +
+                  0.0 * model.P(2, 1) * 1.0 +
+                  I_KH_10 * model.P(0, 2) * 0.0 +
+                  1.0 * model.P(1, 2) * 0.0 +
+                  0.0 * model.P(2, 2) * 0.0 +
+                  K_v * r * K_v;
+    P_upd(1, 2) = I_KH_10 * model.P(0, 0) * (-K_alpha) +
+                  1.0 * model.P(1, 0) * (-K_alpha) +
+                  0.0 * model.P(2, 0) * (-K_alpha) +
+                  I_KH_10 * model.P(0, 1) * 0.0 +
+                  1.0 * model.P(1, 1) * 0.0 +
+                  0.0 * model.P(2, 1) * 0.0 +
+                  I_KH_10 * model.P(0, 2) * 1.0 +
+                  1.0 * model.P(1, 2) * 1.0 +
+                  0.0 * model.P(2, 2) * 1.0 +
+                  K_v * r * K_alpha;
+    // Row 2
+    P_upd(2, 0) = I_KH_20 * model.P(0, 0) * I_KH_00 +
+                  0.0 * model.P(1, 0) * I_KH_00 +
+                  1.0 * model.P(2, 0) * I_KH_00 +
+                  K_alpha * r * K_yaw;
+    P_upd(2, 1) = I_KH_20 * model.P(0, 0) * (-K_v) +
+                  0.0 * model.P(1, 0) * (-K_v) +
+                  1.0 * model.P(2, 0) * (-K_v) +
+                  I_KH_20 * model.P(0, 1) * 1.0 +
+                  0.0 * model.P(1, 1) * 1.0 +
+                  1.0 * model.P(2, 1) * 1.0 +
+                  I_KH_20 * model.P(0, 2) * 0.0 +
+                  0.0 * model.P(1, 2) * 0.0 +
+                  1.0 * model.P(2, 2) * 0.0 +
+                  K_alpha * r * K_v;
+    P_upd(2, 2) = I_KH_20 * model.P(0, 0) * (-K_alpha) +
+                  0.0 * model.P(1, 0) * (-K_alpha) +
+                  1.0 * model.P(2, 0) * (-K_alpha) +
+                  I_KH_20 * model.P(0, 1) * 0.0 +
+                  0.0 * model.P(1, 1) * 0.0 +
+                  1.0 * model.P(2, 1) * 0.0 +
+                  I_KH_20 * model.P(0, 2) * 1.0 +
+                  0.0 * model.P(1, 2) * 1.0 +
+                  1.0 * model.P(2, 2) * 1.0 +
+                  K_alpha * r * K_alpha;
+
+    model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
+    model.P = 0.5 * (P_upd + P_upd.transpose());
+
+    // Likelihood
+    const double mahalanobis = innovation * innovation / std::max(kEps, S);
+    const double norm = std::sqrt(2.0 * kPi * std::max(kEps, S));
+    double likelihood = std::exp(-0.5 * mahalanobis) / norm;
     if (!std::isfinite(likelihood) || likelihood < kEps) {
       likelihood = kEps;
     }
 
-    const Eigen::MatrixXd identity =
-      Eigen::MatrixXd::Identity(models_[j].x.size(), models_[j].x.size());
-    const Eigen::MatrixXd PHt = models_[j].P * H.transpose();
-    const Eigen::MatrixXd s_inv = ldlt.solve(Eigen::MatrixXd::Identity(S.rows(), S.cols()));
-    const Eigen::MatrixXd K = PHt * s_inv;
-
-    Eigen::VectorXd x_upd = models_[j].x + K * innovation;
-    x_upd[kYawIndex] = normalize_angle(x_upd[kYawIndex]);
-
-    const Eigen::MatrixXd joseph =
-      (identity - K * H) * models_[j].P * (identity - K * H).transpose() +
-      K * R * K.transpose();
-
-    models_[j].x = x_upd;
-    models_[j].P = 0.5 * (joseph + joseph.transpose());
-    models_[j].mu = 1.0;
-    models_[j].likelihood = likelihood;
+    model.mu = 1.0;
+    model.likelihood = likelihood;
 
     for (size_t i = 0; i < kModelCount; ++i) {
       if (i == j) {
@@ -453,11 +538,12 @@ bool IMMFilter::update(const Target & target, const Armor & armor, int armor_id)
       models_[i].mu = 0.0;
     }
 
-    fused_x_ = models_[j].x;
-    fused_P_ = models_[j].P;
-    if (fused_x_.size() > kYawIndex) {
-      fused_x_[kYawIndex] = normalize_angle(fused_x_[kYawIndex]);
-    }
+    fused_yaw_ = model.x[kYawIdx];
+    fused_v_yaw_ = model.x[kVIdx];
+    fused_alpha_yaw_ = model.x[kAlphaIdx];
+    fused_P_yaw_ = model.P(kYawIdx, kYawIdx);
+    fused_P_v_ = model.P(kVIdx, kVIdx);
+    fused_P_alpha_ = model.P(kAlphaIdx, kAlphaIdx);
     return true;
   }
 
@@ -465,51 +551,105 @@ bool IMMFilter::update(const Target & target, const Armor & armor, int armor_id)
   double mu_sum = 0.0;
 
   for (size_t j = 0; j < kModelCount; ++j) {
-    Eigen::MatrixXd H = target.h_jacobian(models_[j].x, armor_id);
-    Eigen::Vector4d z_pred = target.predicted_measurement(models_[j].x, armor_id);
-    Eigen::VectorXd innovation = target.measurement_subtract(z, z_pred);
-    Eigen::MatrixXd S = H * models_[j].P * H.transpose() + R;
-    S = 0.5 * (S + S.transpose());
+    auto & model = models_[j];
 
-    models_[j].innovation = innovation;
-    models_[j].innovation_cov = S;
+    // H = [1, 0, 0] - observe yaw position
+    double innovation = normalize_angle(observed_yaw - model.x[kYawIdx]);
+    const double S = model.P(kYawIdx, kYawIdx) + r;
 
-    Eigen::LDLT<Eigen::MatrixXd> ldlt(S);
-    if (ldlt.info() != Eigen::Success) {
-      models_[j].likelihood = kEps;
-      posterior_mu[j] = std::max(c_bar_[j], kEps) * models_[j].likelihood;
-      mu_sum += posterior_mu[j];
-      continue;
-    }
+    model.innovation = innovation;
+    model.innovation_var = S;
 
-    const Eigen::VectorXd solved_innovation = ldlt.solve(innovation);
-    const double mahalanobis = innovation.transpose() * solved_innovation;
-    const double det_s = safe_det(S);
-    const double norm =
-      std::pow(2.0 * kPi, static_cast<double>(z.size())) * std::max(det_s, kEps);
-    double likelihood = std::exp(-0.5 * std::max(0.0, mahalanobis)) / std::sqrt(norm);
+    // Kalman gain for 3x1 H = [1, 0, 0]
+    const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
+    const double K_v = model.P(kVIdx, kYawIdx) / S;
+    const double K_alpha = model.P(kAlphaIdx, kYawIdx) / S;
 
+    // Update state
+    double yaw_upd = normalize_angle(model.x[kYawIdx] + K_yaw * innovation);
+    double v_upd = model.x[kVIdx] + K_v * innovation;
+    double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
+
+    // Joseph form covariance update
+    // Same as locked model case
+    const double I_KH_00 = 1.0 - K_yaw;
+    const double I_KH_10 = -K_v;
+    const double I_KH_20 = -K_alpha;
+
+    Eigen::Matrix3d P_upd;
+    P_upd(0, 0) = I_KH_00 * model.P(0, 0) * I_KH_00 +
+                  I_KH_00 * model.P(0, 1) * I_KH_10 +
+                  I_KH_00 * model.P(0, 2) * I_KH_20 +
+                  K_yaw * r * K_yaw;
+    P_upd(0, 1) = I_KH_00 * model.P(0, 0) * (-K_v) +
+                  I_KH_00 * model.P(0, 1) * 1.0 +
+                  I_KH_00 * model.P(0, 2) * 0.0 +
+                  K_yaw * r * K_v;
+    P_upd(0, 2) = I_KH_00 * model.P(0, 0) * (-K_alpha) +
+                  I_KH_00 * model.P(0, 1) * 0.0 +
+                  I_KH_00 * model.P(0, 2) * 1.0 +
+                  K_yaw * r * K_alpha;
+    P_upd(1, 0) = I_KH_10 * model.P(0, 0) * I_KH_00 +
+                  1.0 * model.P(1, 0) * I_KH_00 +
+                  0.0 * model.P(2, 0) * I_KH_00 +
+                  K_v * r * K_yaw;
+    P_upd(1, 1) = I_KH_10 * model.P(0, 0) * (-K_v) +
+                  1.0 * model.P(1, 0) * (-K_v) +
+                  0.0 * model.P(2, 0) * (-K_v) +
+                  I_KH_10 * model.P(0, 1) * 1.0 +
+                  1.0 * model.P(1, 1) * 1.0 +
+                  0.0 * model.P(2, 1) * 1.0 +
+                  I_KH_10 * model.P(0, 2) * 0.0 +
+                  1.0 * model.P(1, 2) * 0.0 +
+                  0.0 * model.P(2, 2) * 0.0 +
+                  K_v * r * K_v;
+    P_upd(1, 2) = I_KH_10 * model.P(0, 0) * (-K_alpha) +
+                  1.0 * model.P(1, 0) * (-K_alpha) +
+                  0.0 * model.P(2, 0) * (-K_alpha) +
+                  I_KH_10 * model.P(0, 1) * 0.0 +
+                  1.0 * model.P(1, 1) * 0.0 +
+                  0.0 * model.P(2, 1) * 0.0 +
+                  I_KH_10 * model.P(0, 2) * 1.0 +
+                  1.0 * model.P(1, 2) * 1.0 +
+                  0.0 * model.P(2, 2) * 1.0 +
+                  K_v * r * K_alpha;
+    P_upd(2, 0) = I_KH_20 * model.P(0, 0) * I_KH_00 +
+                  0.0 * model.P(1, 0) * I_KH_00 +
+                  1.0 * model.P(2, 0) * I_KH_00 +
+                  K_alpha * r * K_yaw;
+    P_upd(2, 1) = I_KH_20 * model.P(0, 0) * (-K_v) +
+                  0.0 * model.P(1, 0) * (-K_v) +
+                  1.0 * model.P(2, 0) * (-K_v) +
+                  I_KH_20 * model.P(0, 1) * 1.0 +
+                  0.0 * model.P(1, 1) * 1.0 +
+                  1.0 * model.P(2, 1) * 1.0 +
+                  I_KH_20 * model.P(0, 2) * 0.0 +
+                  0.0 * model.P(1, 2) * 0.0 +
+                  1.0 * model.P(2, 2) * 0.0 +
+                  K_alpha * r * K_v;
+    P_upd(2, 2) = I_KH_20 * model.P(0, 0) * (-K_alpha) +
+                  0.0 * model.P(1, 0) * (-K_alpha) +
+                  1.0 * model.P(2, 0) * (-K_alpha) +
+                  I_KH_20 * model.P(0, 1) * 0.0 +
+                  0.0 * model.P(1, 1) * 0.0 +
+                  1.0 * model.P(2, 1) * 0.0 +
+                  I_KH_20 * model.P(0, 2) * 1.0 +
+                  0.0 * model.P(1, 2) * 1.0 +
+                  1.0 * model.P(2, 2) * 1.0 +
+                  K_alpha * r * K_alpha;
+
+    model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
+    model.P = 0.5 * (P_upd + P_upd.transpose());
+
+    // Likelihood
+    const double mahalanobis = innovation * innovation / std::max(kEps, S);
+    const double norm = std::sqrt(2.0 * kPi * std::max(kEps, S));
+    double likelihood = std::exp(-0.5 * mahalanobis) / norm;
     if (!std::isfinite(likelihood) || likelihood < kEps) {
       likelihood = kEps;
     }
 
-    const Eigen::MatrixXd identity =
-      Eigen::MatrixXd::Identity(models_[j].x.size(), models_[j].x.size());
-    const Eigen::MatrixXd PHt = models_[j].P * H.transpose();
-    const Eigen::MatrixXd s_inv = ldlt.solve(Eigen::MatrixXd::Identity(S.rows(), S.cols()));
-    const Eigen::MatrixXd K = PHt * s_inv;
-
-    Eigen::VectorXd x_upd = models_[j].x + K * innovation;
-    x_upd[kYawIndex] = normalize_angle(x_upd[kYawIndex]);
-
-    const Eigen::MatrixXd joseph =
-      (identity - K * H) * models_[j].P * (identity - K * H).transpose() +
-      K * R * K.transpose();
-
-    models_[j].x = x_upd;
-    models_[j].P = 0.5 * (joseph + joseph.transpose());
-    models_[j].likelihood = likelihood;
-
+    model.likelihood = likelihood;
     posterior_mu[j] = std::max(c_bar_[j], kEps) * likelihood;
     mu_sum += posterior_mu[j];
   }
@@ -543,13 +683,21 @@ bool IMMFilter::update(const Target & target, const Armor & armor, int armor_id)
     models_[j].mu = posterior_mu[j];
   }
 
-  fuse_output(kYawIndex);
+  fuse_output();
   return true;
 }
 
-Eigen::VectorXd IMMFilter::state() const { return fused_x_; }
+double IMMFilter::yaw() const { return fused_yaw_; }
 
-Eigen::MatrixXd IMMFilter::covariance() const { return fused_P_; }
+double IMMFilter::v_yaw() const { return fused_v_yaw_; }
+
+double IMMFilter::alpha_yaw() const { return fused_alpha_yaw_; }
+
+double IMMFilter::yaw_cov() const { return fused_P_yaw_; }
+
+double IMMFilter::v_yaw_cov() const { return fused_P_v_; }
+
+double IMMFilter::alpha_yaw_cov() const { return fused_P_alpha_; }
 
 std::array<double, IMMFilter::kModelCount> IMMFilter::getModelProbs() const
 {
@@ -564,8 +712,8 @@ std::array<double, IMMFilter::kModelCount> IMMFilter::getModelAngularVelocitys()
 {
   std::array<double, kModelCount> ws{};
   for (size_t i = 0; i < kModelCount; ++i) {
-    if (models_[i].x.size() > kWIndex) {
-      ws[i] = models_[i].x[kWIndex];
+    if (models_[i].x.size() > kVIdx) {
+      ws[i] = models_[i].x[kVIdx];
     }
   }
   return ws;
@@ -575,8 +723,8 @@ std::array<double, IMMFilter::kModelCount> IMMFilter::getModelAngularAcceleratio
 {
   std::array<double, kModelCount> alphas{};
   for (size_t i = 0; i < kModelCount; ++i) {
-    if (models_[i].x.size() > kAlphaIndex) {
-      alphas[i] = models_[i].x[kAlphaIndex];
+    if (models_[i].x.size() > kAlphaIdx) {
+      alphas[i] = models_[i].x[kAlphaIdx];
     }
   }
   return alphas;

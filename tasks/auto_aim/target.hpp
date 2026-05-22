@@ -80,11 +80,13 @@ public:
   void set_match_gates(double tracked_gate, double init_gate);
   bool in_jump_fire_cooldown(std::chrono::steady_clock::time_point t) const;
   void set_angular_velocity(double angular_velocity);
+  int armor_num() const { return armor_num_; }
   void set_spin_state(SpinModel state) { spin_state_ = state; }
   SpinModel spin_state() const { return spin_state_; }
   void set_linear_speed(double linear_speed) { linear_speed_ = linear_speed; }
   double linear_speed() const { return linear_speed_; }
-  void set_imm_output(double w, double alpha) { imm_w_ = w; imm_alpha_ = alpha; }
+  void set_imm_output(double yaw, double w, double alpha) { imm_yaw_ = yaw; imm_w_ = w; imm_alpha_ = alpha; }
+  double imm_yaw() const { return imm_yaw_; }
   double imm_w() const { return imm_w_; }
   double imm_alpha() const { return imm_alpha_; }
 
@@ -145,6 +147,7 @@ private:
   double measurement_noise_pitch_;
   SpinModel spin_state_;
   double linear_speed_;
+  double imm_yaw_;
   double imm_w_;
   double imm_alpha_;
 

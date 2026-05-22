@@ -200,9 +200,12 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   SpinIMM::Params imm_params;
   imm_params.transition << 0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90;
   imm_params.r_yaw = 2e-3;
-  imm_params.q_slow << 1e-4, 8e-2, 1e-1;
-  imm_params.q_constant << 1e-4, 2e-2, 5e-2;
-  imm_params.q_variable << 2e-4, 2e-1, 8e-1;
+  imm_params.q_v_slow = 8e-2;
+  imm_params.q_v_constant = 2e-2;
+  imm_params.q_v_variable = 2e-1;
+  imm_params.q_alpha_slow = 1e-1;
+  imm_params.q_alpha_constant = 5e-2;
+  imm_params.q_alpha_variable = 8e-1;
   imm_params.alpha_decay_slow = 0.2;
   imm_params.alpha_decay_constant = 0.5;
   imm_params.dt_min = 1e-3;
@@ -219,23 +222,23 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["imm_r_yaw"].IsDefined()) {
     imm_params.r_yaw = std::max(1e-9, yaml["imm_r_yaw"].as<double>());
   }
-  if (yaml["imm_q_slow"].IsDefined()) {
-    const auto values = yaml["imm_q_slow"].as<std::vector<double>>();
-    if (values.size() == 3) {
-      imm_params.q_slow << values[0], values[1], values[2];
-    }
+  if (yaml["imm_q_v_slow"].IsDefined()) {
+    imm_params.q_v_slow = yaml["imm_q_v_slow"].as<double>();
   }
-  if (yaml["imm_q_constant"].IsDefined()) {
-    const auto values = yaml["imm_q_constant"].as<std::vector<double>>();
-    if (values.size() == 3) {
-      imm_params.q_constant << values[0], values[1], values[2];
-    }
+  if (yaml["imm_q_v_constant"].IsDefined()) {
+    imm_params.q_v_constant = yaml["imm_q_v_constant"].as<double>();
   }
-  if (yaml["imm_q_variable"].IsDefined()) {
-    const auto values = yaml["imm_q_variable"].as<std::vector<double>>();
-    if (values.size() == 3) {
-      imm_params.q_variable << values[0], values[1], values[2];
-    }
+  if (yaml["imm_q_v_variable"].IsDefined()) {
+    imm_params.q_v_variable = yaml["imm_q_v_variable"].as<double>();
+  }
+  if (yaml["imm_q_alpha_slow"].IsDefined()) {
+    imm_params.q_alpha_slow = yaml["imm_q_alpha_slow"].as<double>();
+  }
+  if (yaml["imm_q_alpha_constant"].IsDefined()) {
+    imm_params.q_alpha_constant = yaml["imm_q_alpha_constant"].as<double>();
+  }
+  if (yaml["imm_q_alpha_variable"].IsDefined()) {
+    imm_params.q_alpha_variable = yaml["imm_q_alpha_variable"].as<double>();
   }
   if (yaml["imm_alpha_decay_slow"].IsDefined()) {
     imm_params.alpha_decay_slow = std::clamp(yaml["imm_alpha_decay_slow"].as<double>(), 0.0, 1.0);
@@ -525,7 +528,13 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
 
   if (imm_enabled_) {
     configure_imm_for_target(&spin_imm_, target_);
-    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
+    const double init_yaw = target_.ekf_x()[kIdxYaw];
+    const double init_w = target_.ekf_x()[kIdxW];
+    const double init_alpha = target_.ekf_x()[kIdxAlpha];
+    const double init_P_yaw = target_.ekf().P(kIdxYaw, kIdxYaw);
+    const double init_P_w = target_.ekf().P(kIdxW, kIdxW);
+    const double init_P_alpha = target_.ekf().P(kIdxAlpha, kIdxAlpha);
+    spin_imm_.initialize(init_yaw, init_w, init_alpha, init_P_yaw, init_P_w, init_P_alpha);
     imm_initialized_ = true;
   } else {
     spin_imm_.reset();
@@ -568,7 +577,13 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   configure_imm_for_target(&spin_imm_, target_);
 
   if (!spin_imm_.initialized()) {
-    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
+    const double init_yaw = target_.ekf_x()[kIdxYaw];
+    const double init_w = target_.ekf_x()[kIdxW];
+    const double init_alpha = target_.ekf_x()[kIdxAlpha];
+    const double init_P_yaw = target_.ekf().P(kIdxYaw, kIdxYaw);
+    const double init_P_w = target_.ekf().P(kIdxW, kIdxW);
+    const double init_P_alpha = target_.ekf().P(kIdxAlpha, kIdxAlpha);
+    spin_imm_.initialize(init_yaw, init_w, init_alpha, init_P_yaw, init_P_w, init_P_alpha);
     imm_initialized_ = true;
     imm_last_w_ = target_.ekf_x()[kIdxW];
     imm_dw_lpf_ = 0.0;
@@ -576,11 +591,10 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   }
 
   const double dt = imm_initialized_ ? tools::delta_time(t, imm_last_t_) : kDefaultMotionDt;
-  spin_imm_.predict(target_, dt);
+  spin_imm_.predict(dt);
 
-  // 复用 Target 内部时间与状态机辅助逻辑，但最终主状态由 IMM 融合结果回写
+  // 复用 Target 内部时间与状态机辅助逻辑
   target_.predict(t);
-  target_.set_filter_state(spin_imm_.state(), spin_imm_.covariance());
 
   bool found = false;
   int best_armor_index = -1;
@@ -588,15 +602,28 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   if (select_best_candidate(target_, candidates, &best_armor_index, &best_id)) {
     const auto & armor = candidates[best_armor_index];
     target_.apply_measurement_bookkeeping(armor, best_id);
-    found = spin_imm_.update(target_, armor, best_id);
+
+    // 直接观测补偿装甲板 id 后的旋转中心 yaw 位置
+    const double armor_num = static_cast<double>(target_.armor_num());
+    const double observed_center_yaw = tools::limit_rad(
+      armor.ypr_in_world[0] - best_id * 2.0 * M_PI / armor_num);
+
+    found = spin_imm_.update(observed_center_yaw, measurement_noise_yaw_);
     if (found) {
-      target_.set_filter_state(spin_imm_.state(), spin_imm_.covariance());
+      // IMM 的 yaw/v_yaw/alpha_yaw 直接输出给下游，不写回 EKF
+      target_.set_imm_output(spin_imm_.yaw(), spin_imm_.v_yaw(), spin_imm_.alpha_yaw());
     }
   }
 
   if (force_target_angular_velocity_) {
     target_.set_angular_velocity(forced_target_angular_velocity_);
-    spin_imm_.initialize(target_.ekf_x(), target_.ekf().P);
+    const double init_yaw = target_.ekf_x()[kIdxYaw];
+    const double init_w = target_.ekf_x()[kIdxW];
+    const double init_alpha = target_.ekf_x()[kIdxAlpha];
+    const double init_P_yaw = target_.ekf().P(kIdxYaw, kIdxYaw);
+    const double init_P_w = target_.ekf().P(kIdxW, kIdxW);
+    const double init_P_alpha = target_.ekf().P(kIdxAlpha, kIdxAlpha);
+    spin_imm_.initialize(init_yaw, init_w, init_alpha, init_P_yaw, init_P_w, init_P_alpha);
   }
 
   update_motion_state(target_, t);
@@ -613,7 +640,12 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
   SpinModel spin_state = SpinModel::slow;
 
   if (imm_enabled_ && spin_imm_.initialized()) {
-    fused_state = spin_imm_.state();
+    // Use IMM's fused v_yaw and alpha_yaw directly
+    const double imm_v = spin_imm_.v_yaw();
+    const double imm_alpha = spin_imm_.alpha_yaw();
+    fused_state[kIdxW] = imm_v;
+    fused_state[kIdxAlpha] = imm_alpha;
+
     model_probs = spin_imm_.getModelProbs();
     model_ws = spin_imm_.getModelAngularVelocitys();
     model_alphas = spin_imm_.getModelAngularAccelerations();
@@ -675,7 +707,7 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
 
   target.set_spin_state(spin_state);
   target.set_linear_speed(linear_speed);
-  target.set_imm_output(w, alpha);
+  target.set_imm_output(spin_imm_.yaw(), w, alpha);
 
   nlohmann::json plot_json;
   plot_json["imm_enabled"] = imm_enabled_;
