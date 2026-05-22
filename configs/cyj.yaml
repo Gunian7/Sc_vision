@@ -9,7 +9,7 @@ yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
-min_confidence: 0.75
+min_confidence: 0.7
 use_traditional: true
 
 #####-----ROI-----#####
@@ -60,9 +60,9 @@ motion_dw_high: 0.5 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为�
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
 imm_r_yaw: 0.02 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
 imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
-imm_q_constant: [1e-4, 3e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
+imm_q_constant: [1e-4, 2e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
 imm_q_variable: [2e-4, 4e-1, 8e-1] # variable模型过程噪声Q[yaw,w,alpha]，通常应最大
-imm_alpha_decay_slow: 0.3 # slow模型下alpha衰减系数，越大角加速度回零越快
+imm_alpha_decay_slow: 0.2 # slow模型下alpha衰减系数，越大角加速度回零越快
 imm_alpha_decay_constant: 0.5 # constant模型下alpha衰减系数，常设高于slow以抑制伪加速度
 imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
 imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
@@ -85,10 +85,10 @@ forced_target_angular_velocity: 2.51 # rad/s
 yaw_offset: -0.4   # 增大向左，减小向右
 pitch_offset: -0.7 # 增大向上 反之向下
 comming_angle: 55 # degree 55
-leaving_angle: 30 # degree 20
+leaving_angle: 10 # degree 20
 comming_angle_high: 30 # degree 高速(角速度大)使用
-leaving_angle_high: 15 # degree 高速(角速度大)使用
-comming_end_angle: 10 # degree 极高速下的最小角度
+leaving_angle_high: 5 # degree 高速(角速度大)使用
+comming_end_angle: 5 # degree 极高速下的最小角度
 leaving_end_angle: 3 # degree 极高速下的最小角度
 speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
 speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
@@ -96,7 +96,7 @@ decision_speed: 9 # rad/s
 use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
 pre_aim_max_delta_angle: 65 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
 outpost_nominal_angular_speed: 2.51327412287 # rad/s 前哨站角速度先验幅值，约等于0.8π，方向继承当前估计w符号
-outpost_nominal_w_blend: 0.2 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
+outpost_nominal_w_blend: 0.5 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
 
 #####-----auto aim fsm参数-----#####
 auto_aim_fsm:
@@ -113,7 +113,7 @@ auto_aim_fsm:
 # 越大越提前
 high_speed_delay_time: -0.05 # s
 low_speed_delay_time: -0.08 # s planner use this value
-outpost_delay_time: 0.0 # s 前哨站专用delay，不走low_speed_delay_time
+outpost_delay_time: 0.06 # s 前哨站专用delay，不走low_speed_delay_time
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
@@ -121,7 +121,7 @@ second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 outpost_tolerance_deg: 3.0 # degree 前哨站专用：云台yaw跟踪误差容差，越大越容易开火，越小越严格
-outpost_phase_window_deg: 28.0 # degree 前哨站专用：装甲板相对旋转中心允许开火的相位窗口，越大越早/越晚都可能开火
+outpost_phase_window_deg: 25.0 # degree 前哨站专用：装甲板相对旋转中心允许开火的相位窗口，越大越早/越晚都可能开火
 outpost_yaw_vel_threshold: 2.0 # rad/s 前哨站专用：command.yaw_vel上限，超过认为还在快速甩枪，不开火
 
 camera_name: "mindvision"
@@ -193,4 +193,4 @@ model: "assets/yolo11_buff_int8.xml"
 fire_gap_time: 0.700   # s
 predict_time: 0.120     # s
 
-bullet_speed: 22.5  # m/soutpost
+bullet_speed: 22.5  # m/s

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 #include <string>
+#include <limits>
 
 #include <fmt/core.h>
 #include <fmt/format.h> // Explicit formatting support
@@ -193,10 +194,24 @@ int main(int argc, char* argv[]) {
         auto aimer_start   = std::chrono::steady_clock::now();
         double active_bullet_speed = (cboard ? cboard->bullet_speed : config_bullet_speed);
         auto command       = aimer.aim(targets, t, active_bullet_speed);
-        
+
+        const double nan_deg = std::numeric_limits<double>::quiet_NaN();
+        double aim_debug_yaw_deg = nan_deg;
+        double planner_debug_yaw_deg = nan_deg;
+        double plan_target_yaw_deg = nan_deg;
+        double plan_yaw_deg = nan_deg;
+
+        if (aimer.debug_aim_point.valid) {
+            aim_debug_yaw_deg = aimer.debug_aim_point.xyza[3] * 57.3;
+        }
+
         if (!targets.empty()) {
             auto plan = planner.plan(targets.front(), active_bullet_speed);
+            planner_debug_yaw_deg = planner.debug_xyza[3] * 57.3;
+            plan_target_yaw_deg = plan.target_yaw * 57.3;
+            plan_yaw_deg = plan.yaw * 57.3;
             if (plan.control) {
+                command.control   = true;
                 command.yaw       = plan.yaw;
                 command.pitch     = plan.pitch;
                 command.yaw_vel   = plan.yaw_vel;
@@ -208,12 +223,24 @@ int main(int argc, char* argv[]) {
 
         Eigen::Quaterniond gimbal_q = q;
         Eigen::Vector3d ypr         = tools::eulers(gimbal_q.toRotationMatrix(), 2, 1, 0);
+        auto yaw                    = ypr[0];
+        auto pitch                  = ypr[1];
+
+        const io::Command prev_command = last_command;
+
+        // 平滑过渡逻辑：当目标位置跳变过大时，逐帧过渡而不是直接跳变
+        if (enable_target_stabilize && command.control && prev_command.control) {
+            double delta_yaw = std::abs(command.yaw - prev_command.yaw) * 57.3;   // 转为度
+            double delta_pitch = std::abs(command.pitch - prev_command.pitch) * 57.3;
+            
+            // 如果yaw或pitch跳变超过阈值，应用指数平滑
+            if (delta_yaw > target_jump_angle_threshold_deg || delta_pitch > target_jump_angle_threshold_deg) {
+                command.yaw = (1.0 - target_stabilize_alpha) * prev_command.yaw + target_stabilize_alpha * command.yaw;
+                command.pitch = (1.0 - target_stabilize_alpha) * prev_command.pitch + target_stabilize_alpha * command.pitch;
+            }
+        }
 
         command.shoot = shooter.shoot(command, aimer, targets, ypr);
-
-        if (command.control) {
-            last_command = command;
-        }
 
         tools::logger()->info(
             "[{}] yolo: {:.1f}ms, tracker: {:.1f}ms, aimer: {:.1f}ms",
@@ -222,9 +249,6 @@ int main(int argc, char* argv[]) {
             tools::delta_time(aimer_start, tracker_start) * 1e3,
             tools::delta_time(finish, aimer_start) * 1e3
         );
-
-        auto yaw                    = ypr[0];
-        auto pitch                  = ypr[1];
 
         tools::draw_text(
             img,
@@ -261,7 +285,28 @@ int main(int argc, char* argv[]) {
         data["gimbal_pitch"] = pitch * 57.3;
         data["cmd_yaw"]    = command.yaw * 57.3;
         data["cmd_pitch"]  = command.pitch * 57.3;
+        data["cmd_yaw_vel"] = command.yaw_vel;
+        data["cmd_pitch_vel"] = command.pitch_vel;
+        data["cmd_find"]   = command.control;
+        data["cmd_fire"]   = command.shoot;
         data["shoot"]      = command.shoot;
+
+        // 下位机反馈的云台实际数据
+        if (cboard) {
+            data["feedback_yaw"] = cboard->feedback_yaw() * 57.3;
+            data["feedback_pitch"] = cboard->feedback_pitch() * 57.3;
+            data["feedback_yaw_vel"] = cboard->feedback_yaw_vel();
+            data["feedback_pitch_vel"] = cboard->feedback_pitch_vel();
+        }
+
+        data["aim_debug_yaw_deg"] = aim_debug_yaw_deg;
+        data["planner_debug_yaw_deg"] = planner_debug_yaw_deg;
+        data["plan_target_yaw_deg"] = plan_target_yaw_deg;
+        data["plan_yaw_deg"] = plan_yaw_deg;
+        data["delta_aim_vs_gimbal_deg"] = aim_debug_yaw_deg - yaw * 57.3;
+        data["delta_plan_target_vs_gimbal_deg"] = plan_target_yaw_deg - yaw * 57.3;
+        data["delta_plan_vs_gimbal_deg"] = plan_yaw_deg - yaw * 57.3;
+        data["delta_plan_vs_cmd_deg"] = plan_yaw_deg - command.yaw * 57.3;
 
         if (!targets.empty()) {
             auto target                                  = targets.front();
@@ -379,20 +424,11 @@ int main(int argc, char* argv[]) {
         if (key == 'q')
             break;
 
-        // 平滑过渡逻辑：当目标位置跳变过大时，逐帧过渡而不是直接跳变
-        if (enable_target_stabilize && command.control) {
-            double delta_yaw = std::abs(command.yaw - last_command.yaw) * 57.3;   // 转为度
-            double delta_pitch = std::abs(command.pitch - last_command.pitch) * 57.3;
-            
-            // 如果yaw或pitch跳变超过阈值，应用指数平滑
-            if (delta_yaw > target_jump_angle_threshold_deg || delta_pitch > target_jump_angle_threshold_deg) {
-                command.yaw = (1.0 - target_stabilize_alpha) * last_command.yaw + target_stabilize_alpha * command.yaw;
-                command.pitch = (1.0 - target_stabilize_alpha) * last_command.pitch + target_stabilize_alpha * command.pitch;
-            }
-        }
-
         if (cboard) {
             cboard->send(command);
+        }
+        if (command.control) {
+            last_command = command;
         }
         frame_count++;
     }

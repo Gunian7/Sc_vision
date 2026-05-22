@@ -1,5 +1,4 @@
 # enemy_color : "red" 
-
 enemy_color: "blue"
 
 #####-----神经网络参数-----#####
@@ -10,7 +9,7 @@ yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
-min_confidence: 0.70
+min_confidence: 0.7
 use_traditional: true
 
 #####-----ROI-----#####
@@ -43,10 +42,10 @@ min_detect_count: 5
 max_temp_lost_count: 15
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
 outpost_leaving_angle: 30 # degree 前哨站离开视野角度
-outpost_max_temp_lost_count: 15
+outpost_max_temp_lost_count: 60
 
 #### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
-jump_yaw_threshold_deg: 35.0 # degree 非前哨站判定为"大yaw跳变"的阈值
+jump_yaw_threshold_deg: 50.0 # degree 非前哨站判定为"大yaw跳变"的阈值
 jump_z_threshold: 0.07 # m 前哨站仍按z跳变判定
 jump_confirm_count: 3
 jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越大
@@ -60,21 +59,21 @@ motion_state_enable: true   # 是否启用旋转状态分类（slow/constant/var
 
 enable_imm: true  # 是否启用IMM，启用后由IMM三模型直接输出旋转状态分类
 motion_w_low: 5.0 # rad/s fallback角速度阈值：|w|超过后判为constant
-motion_dw_high: 6.0 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
+motion_dw_high: 0.5 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和为1): slow/constant/variable
-imm_r_yaw: 0.002 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
+imm_r_yaw: 0.02 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
 imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
 imm_q_constant: [1e-4, 2e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
-imm_q_variable: [2e-4, 2e-1, 8e-1] # variable模型过程噪声Q[yaw,w,alpha]，通常应最大
+imm_q_variable: [2e-4, 4e-1, 8e-1] # variable模型过程噪声Q[yaw,w,alpha]，通常应最大
 imm_alpha_decay_slow: 0.2 # slow模型下alpha衰减系数，越大角加速度回零越快
 imm_alpha_decay_constant: 0.5 # constant模型下alpha衰减系数，常设高于slow以抑制伪加速度
 imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
 imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
 # 目标过程噪声 角速度/线速度 (你认为运动模型越不准，就把Q调的越大，否则就越小)
 target_process_noise_linear_normal: 100.0  #100
-target_process_noise_angular_normal: 200.0  #400
-target_process_noise_linear_outpost: 10.0
-target_process_noise_angular_outpost: 100.0
+target_process_noise_angular_normal: 100.0  #400
+target_process_noise_linear_outpost: 1.0
+target_process_noise_angular_outpost: 10.0
 # 目标测量噪声 (你觉得你的识别准吗？不准就给我调大R)
 target_measurement_noise_yaw: 0.005    #0.002
 target_measurement_noise_pitch: 0.002
@@ -87,13 +86,13 @@ force_target_angular_velocity: false    # 只针对非前哨站目标生效，�
 forced_target_angular_velocity: 2.51 # rad/s
 
 #####-----aimer参数-----#####
-yaw_offset: -1.3  # 增大向左，反之向右
-pitch_offset: -3.3 # 增大向上 反之向下
+yaw_offset: -2.1  # 减小向右，增大向左
+pitch_offset: -0.3   # 增大向上 反之向下
 comming_angle: 55 # degree 55
-leaving_angle: 20 # degree 20
+leaving_angle: 10 # degree 20
 comming_angle_high: 30 # degree 高速(角速度大)使用
 leaving_angle_high: 5 # degree 高速(角速度大)使用
-comming_end_angle: 7 # degree 极高速下的最小角度
+comming_end_angle: 5 # degree 极高速下的最小角度
 leaving_end_angle: 3 # degree 极高速下的最小角度
 speed_angle: 8 # rad/s 角速度阈值(用于comming/leaving切换)
 speed_angle_max: 11 # rad/s 达到该角速度时角度缩减到end_angle
@@ -101,7 +100,7 @@ decision_speed: 9 # rad/s
 use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
 pre_aim_max_delta_angle: 65 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
 outpost_nominal_angular_speed: 2.51327412287 # rad/s 前哨站角速度先验幅值，约等于0.8π，方向继承当前估计w符号
-outpost_nominal_w_blend: 0.2 # [0,1] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
+outpost_nominal_w_blend: 0.5 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
 
 #####-----auto aim fsm参数-----#####
 auto_aim_fsm:
@@ -110,14 +109,14 @@ auto_aim_fsm:
   # rad/s 
   single_whole_up: 2.5    # 单板 -> 整车 上行阈值
   single_whole_down: 1.8  # 整车 -> 单板 下行阈值
-  whole_pair_up: 6.5      # 整车-> 对板 上行阈值
-  whole_pair_down: 5.5    # 对板 -> 整车 下行阈值
+  whole_pair_up: 5.5      # 整车-> 对板 上行阈值
+  whole_pair_down: 4.5    # 对板 -> 整车 下行阈值
   pair_center_up: 8.0     # 对板 -> 车心 上行阈值
   pair_center_down: 6.5   # 车心 -> 对板 下行阈值
 
 high_speed_delay_time: -0.05 # s
 low_speed_delay_time: -0.08 # s planner use this value
-outpost_delay_time: 0.0 # s 前哨站专用delay，不走low_speed_delay_time
+outpost_delay_time: 0.06 # s 前哨站专用delay，不走low_speed_delay_time
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
@@ -125,22 +124,21 @@ second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 outpost_tolerance_deg: 3.0 # degree 前哨站专用：云台yaw跟踪误差容差，越大越容易开火，越小越严格
-outpost_phase_window_deg: 28.0 # degree 前哨站专用：装甲板相对车心允许开火的相位窗口，越大越早/越晚都可能开火
+outpost_phase_window_deg: 25.0 # degree 前哨站专用：装甲板相对车心允许开火的相位窗口，越大越早/越晚都可能开火
 outpost_yaw_vel_threshold: 2.0 # rad/s 前哨站专用：command.yaw_vel上限，超过认为还在快速甩枪，不开火
 
 camera_name: "mindvision"
-exposure_ms: 8.0
+# exposure_ms: 7.5
+exposure_ms: 6.0
 gamma: 1.0
-gain: 200.0   
+gain: 400.0   
 vid_pid: "f622:d132"
 
 
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-
-camera_matrix: [1589.4373322712088, 0.0, 662.228805477449, 0.0, 1586.6633444928955, 520.54936919145, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.05815007752029064, 0.18034098732616488, 0.0029608386250371643, 0.0008841906203098307, 0.0]
-
+camera_matrix: [1567.7907457705167, 0.0, 662.3933648922284, 0.0, 1564.9113082257936, 536.8662848443158, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.3176141589160351, 0.16325331816941008, 0.0016205673676247642, 0.000574727471144031, 0.0]
 
 
 R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]
@@ -156,7 +154,7 @@ imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
 use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
+use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
@@ -164,7 +162,7 @@ target_stabilize_alpha: 0.3            # 平滑系数(0.0~1.0)，越小越平滑
 enable_target_stabilize: false          # 是否启用平滑过渡机制
 
 #####-----plotter参数-----#####
-plotter_host: "127.0.0.1"
+plotter_host: "10.2.20.200"
 plotter_port: 9870
 
 #####-----gimbal参数-----#####
@@ -190,6 +188,6 @@ model: "assets/yolo11_buff_int8.xml"
 
 #####-----buff_aimer参数-----#####
 fire_gap_time: 0.700   # s
-predict_time: 0.120     # s
+predict_time: 1.2     # s
 
-bullet_speed: 21.9  # m/s
+bullet_speed: 22.5  # m/s

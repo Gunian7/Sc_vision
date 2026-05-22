@@ -74,6 +74,12 @@ public:
     // 上发下
     void send(Command command);
 
+    // 获取下位机反馈的原始云台数据
+    float feedback_yaw() const { return feedback_yaw_; }
+    float feedback_pitch() const { return feedback_pitch_; }
+    float feedback_yaw_vel() const { return feedback_yaw_vel_; }
+    float feedback_pitch_vel() const { return feedback_pitch_vel_; }
+
 private:
     struct IMUData {
         Eigen::Quaterniond q;
@@ -106,6 +112,12 @@ private:
     serial_phoenix::Serial serial_;
     std::vector<uint8_t> read_buffer_;
     std::vector<uint8_t> write_buffer_;
+
+    // 下位机反馈的原始云台数据（来自 Autoaim_s）
+    float feedback_yaw_ = 0.0f;
+    float feedback_pitch_ = 0.0f;
+    float feedback_yaw_vel_ = 0.0f;
+    float feedback_pitch_vel_ = 0.0f;
 };
 
 } // namespace io

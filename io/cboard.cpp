@@ -218,6 +218,12 @@ void CBoard::read_fun_1(Message_phoenix& msg) {
     yaw_vel = yaw_velocity;
     pitch_vel = pitch_velocity;
 
+    // 保存下位机反馈的原始云台数据（供外部 plotter 等使用）
+    feedback_yaw_ = static_cast<float>(yaw);
+    feedback_pitch_ = static_cast<float>(pitch);
+    feedback_yaw_vel_ = static_cast<float>(yaw_vel);
+    feedback_pitch_vel_ = static_cast<float>(pitch_vel);
+
     // 合法性检查：排除 NaN/Inf 或极端错误值，避免产生非法四元数
     if (!std::isfinite(yaw) || !std::isfinite(pitch) || std::abs(yaw) > 1e4 || std::abs(pitch) > 1e4) {
         tools::logger()->error("[CBoard] Invalid IMU angles, skipping sample: yaw={}, pitch={}", yaw, pitch);

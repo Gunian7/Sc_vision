@@ -1,5 +1,5 @@
-enemy_color : "red" 
-# enemy_color: "blue"
+# enemy_color : "red" 
+enemy_color: "blue"
 
 #####-----神经网络参数-----#####
 yolo_name: yolov5
@@ -96,7 +96,7 @@ decision_speed: 9 # rad/s
 use_center_aim_when_high_speed: true # 高于decision_speed时yaw是否切换为瞄准车心(false则保持原先装甲板跟随)
 pre_aim_max_delta_angle: 65 # degree 预击打最大偏角限制，按(delta_angle + w*fly_time)筛掉过于靠后的装甲板
 outpost_nominal_angular_speed: 2.51327412287 # rad/s 前哨站角速度先验幅值，约等于0.8π，方向继承当前估计w符号
-outpost_nominal_w_blend: 0.2 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
+outpost_nominal_w_blend: 0.5 # [0,2] 前哨站先验角速度混合比例，0=纯估计w，1=纯0.8π先验
 
 #####-----auto aim fsm参数-----#####
 auto_aim_fsm:
@@ -113,7 +113,7 @@ auto_aim_fsm:
 # 越大越提前
 high_speed_delay_time: -0.05 # s
 low_speed_delay_time: -0.08 # s planner use this value
-outpost_delay_time: 0.0 # s 前哨站专用delay，不走low_speed_delay_time
+outpost_delay_time: 0.06 # s 前哨站专用delay，不走low_speed_delay_time
 
 #####-----shooter参数-----#####
 first_tolerance: 3 # 近距离射击容差，degree
@@ -121,7 +121,7 @@ second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 outpost_tolerance_deg: 3.0 # degree 前哨站专用：云台yaw跟踪误差容差，越大越容易开火，越小越严格
-outpost_phase_window_deg: 28.0 # degree 前哨站专用：装甲板相对旋转中心允许开火的相位窗口，越大越早/越晚都可能开火
+outpost_phase_window_deg: 25.0 # degree 前哨站专用：装甲板相对旋转中心允许开火的相位窗口，越大越早/越晚都可能开火
 outpost_yaw_vel_threshold: 2.0 # rad/s 前哨站专用：command.yaw_vel上限，超过认为还在快速甩枪，不开火
 
 camera_name: "mindvision"
@@ -191,6 +191,6 @@ model: "assets/yolo11_buff_int8.xml"
 
 #####-----buff_aimer参数-----#####
 fire_gap_time: 0.700   # s
-predict_time: 0.05   # s
+predict_time: 1.2     # s
 
 bullet_speed: 22.5  # m/s
