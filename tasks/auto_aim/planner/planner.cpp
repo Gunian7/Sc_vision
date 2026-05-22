@@ -36,7 +36,7 @@ Plan Planner::plan(Target target, double bullet_speed)
 {
   // 0. Check bullet speed
   if (bullet_speed < 10 || bullet_speed > 25) {
-    bullet_speed = 22;
+    bullet_speed = 22.5;
   }
 
   // 1. Predict fly_time
@@ -53,7 +53,18 @@ Plan Planner::plan(Target target, double bullet_speed)
     return {false};
   }
   auto bullet_traj = tools::Trajectory(bullet_speed, min_dist, xyz.z());
-  target.predict(bullet_traj.fly_time);
+
+  // 根据目标类型选择延迟时间
+  // 前哨站：使用固定的前哨站延迟时间（从yaml读取）
+  // 其他目标：根据转速选择固定延迟（通信+处理延迟）
+  double delay_time;
+  if (target.name == ArmorName::outpost) {
+    delay_time = outpost_delay_time_;
+  } else {
+    delay_time = std::abs(target.ekf_x()[7]) > decision_speed_ ? high_speed_delay_time_ : low_speed_delay_time_;
+  }
+
+  target.predict(bullet_traj.fly_time + delay_time);
 
   // 2. Get trajectory
   double yaw0;
