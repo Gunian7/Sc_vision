@@ -2,7 +2,7 @@
 
 ## 1. 安装依赖
 在终端中运行setup.bash脚本安装依赖：
-（注意ROS和OpenVINO版本，确保与系统兼容）
+（注意ROS和OpenVINO版本，确保与系统兼容,如果下载太慢或者不方便，直接在本机下载然后通过scp传过去）
 ```bash
 bash setup.bash
 ```
@@ -14,17 +14,18 @@ cmake -B build
 cmake --build build -j$(nproc)
 ```
 
-如果只需编译某个特定目标（例如步兵主程序），可以加 `--target`：
+如果只需编译某个特定目标（例如自瞄主程序），可以加 `--target`：
 
 ```bash
 cmake --build build --target standard_mpc_se -j$(nproc)
 ```
-io部分可能需要单独colcon build编译，不然找不到对应的serial：
-
+io部分可能需要单独colcon build编译，不然找不到对应的serial：(理论上除了哨兵分支，需要在io/ros单独source，别的部分都没有ROS的依赖)
 （如果还有报错请移步询问ai，可能需要安装串口库，届时请直接安装对应发行版依赖，例如 jazzy：
 `sudo apt install ros-jazzy-serial ros-jazzy-ros2-serial-driver`）
 ```bash
 cd io
+source /opt/ros/humble/setup.bash
+source install/setup.bash
 colcon build --symlink-install
 ```
 3. 授予串口执行权限
@@ -40,7 +41,7 @@ udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
 
 ### 主程序
 
-**当前标准步兵自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑,需要注意的是.yaml文件众多，但是不一定都是对的，需要自己辨别，一般来说，standard.yaml是正常的可以直接使用：
+**当前自瞄程序为 `standard_mpc_se`**，使用串口 CBoard 通信，支持多线程推理和完整火控逻辑,需要注意的是.yaml文件众多，但是不一定都是对的，需要自己辨别，一般来说，standard.yaml是正常的可以直接使用：
 
 ```bash
 ./build/standard_mpc_se configs/standard.yaml
@@ -62,7 +63,7 @@ udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
 > 不加该参数时程序只会在终端打印 FPS，看起来像“没有窗口”。
 
 #### 通信测试
-验证与 C 板通讯（打印欧拉角 + 弹速）：
+验证与 C 板通讯（打印欧拉角 + 弹速 + mode）：
 ```bash
 ./build/cboard_test 
 ```
@@ -98,7 +99,7 @@ udevadm info -a -n /dev/ttyACM0 | grep -E '({serial}|{idVendor}|{idProduct})'
 ```bash
 ./build/usbcamera_detect_test configs/standard.yaml --name=video0 --display
 ```
-> `--name` 指定设备名，默认 `video0`。**不可使用 MindVision 相机的 yaml（如 `sentry_blue.yaml`）**，否则会报 `image_width not found`。
+> `--name` 指定设备名，默认 `video0`。
 
 ---
 
@@ -113,7 +114,7 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 - 窗口显示追踪重投影（黄色框）
 - 终端打印追踪状态、瞄准角度、是否触发射击
 - PlotJuggler 可实时接收 `target_x/y/z/w`、`cmd_yaw/pitch`、`shoot` 等数据
-> 可通过 `--speed=15.0` 覆盖 yaml 中的弹速。
+>支持命令行传参覆盖 如 `--speed=15.0` 覆盖 yaml 中的弹速。
 
 ---
 
@@ -130,22 +131,16 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 若需要 MPC 版本调试：
 
 ```bash
-./build/auto_buff_debug_mpc configs/standard.yaml
+./build/standard_mpc_se configs/standard.yaml
 ```
 
-> `auto_buff_debug` 源码当前默认是小符目标（`SmallTarget`）。如需固定调大符，可切换为 `BigTarget` 分支后重新编译。
-
-#### 在线模式切换运行（推荐实车）
-
-`mt_standard` 同时包含自瞄与打符流程，按下位机模式切换：
-- `auto_aim`：自瞄
-- `small_buff`：小符
-- `big_buff`：大符
+> 根据下位机传的mode决定对应流程
 
 ```bash
 ./build/mt_standard configs/standard.yaml
 ```
-#### 云台响应测试（无需相机/下位机），发送步兵云台信号，观察响应曲线，修改mode即可改变相应轨迹：
+#### 云台响应测试（无需相机/下位机）：
+发送步兵云台信号，观察响应曲线，修改mode即可改变相应轨迹：
 ```
 ./build/gimbal_response_test configs/standard.yaml --signal-mode=step --axis yaw
 ```
@@ -170,12 +165,13 @@ IMU 姿态固定为单位四元数（等效云台水平静止），弹速从 yam
 
 ## 开机自启 (Autostart)
 
-本项目使用 `watchdog.sh` 作为守护进程，由 systemd 服务在开机时拉起。
+本项目使用 `watchdog.sh` 作为守护进程，由 systemd 服务在开机时拉起。当没有设备的时候不断轮询直到找到设备，然后进入主程序
 
 ### 步骤 1：确保脚本有执行权限（注意路径要修改为实际路径）
 
 ```bash
 chmod +x /home/setsuna/RM/AutoAim/Sc_vision/watchdog.sh
+（改到你对应的程序）
 ```
 
 ### 步骤 2：确认 watchdog.sh 配置正确
@@ -187,12 +183,12 @@ BIN_PATH="./build/standard_mpc_se"       # 运行的可执行文件
 CONFIG_PATH="configs/standard.yaml"      # 配置文件路径
 ```
 
-ROS 2 环境变量（如需要）建议在脚本开头按本机发行版自动 source（当前机器为 jazzy）：
+ROS 2 环境变量（如需要）建议在脚本开头按本机发行版自动 source（当前机器环境为humble）：
 ```bash
-if [ -f /opt/ros/jazzy/setup.zsh ]; then
-    source /opt/ros/jazzy/setup.zsh
-elif [ -f /opt/ros/jazzy/setup.bash ]; then
-    source /opt/ros/jazzy/setup.bash
+if [ -f /opt/ros/humble/setup.zsh ]; then
+    source /opt/ros/humble/setup.zsh
+elif [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
 fi
 ```
 > 如使用其他 ROS 版本，修改路径即可。
@@ -232,6 +228,7 @@ WantedBy=multi-user.target
 说明：
 - `Type=simple` 假定 `watchdog.sh` 在前台运行并不 fork；如果脚本会后台 fork，请改为 `Type=forking` 并使用 `PIDFile=`。
 - `EnvironmentFile` 前的 `-` 表示文件不存在时忽略（方便可选配置）。
+- 注意将
 
 3. 重载 systemd 配置并启动服务：
 
