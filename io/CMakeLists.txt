@@ -10,6 +10,7 @@ add_library(io STATIC
     hikrobot/hikrobot.cpp    
     mindvision/mindvision.cpp  
     usbcamera/usbcamera.cpp  
+    simulator/simulator.cpp
     camera.cpp
     cboard.cpp
     dm_imu/dm_imu.cpp
