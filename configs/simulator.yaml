@@ -9,14 +9,14 @@ yolov8_model_path: assets/yolov8.xml
 yolov5_model_path: assets/yolov5.xml
 rp24_model_path: assets/rp24_0526.onnx
 device: CPU
-min_confidence: 0.7
+min_confidence: 0.75
 use_traditional: true
 
 #####-----ROI-----#####
 
 roi: 
   x: 260
-  y: 350
+  y: 400
   width: 800
   height: 500
 
@@ -42,9 +42,9 @@ min_detect_count: 5
 max_temp_lost_count: 15
 outpost_comming_angle: 70 # degree 前哨站进入视野角度
 outpost_leaving_angle: 30 # degree 前哨站离开视野角度
-outpost_max_temp_lost_count: 60
+outpost_max_temp_lost_count: 15
 
-#### -----装甲板跳变参数-----##### 注意要大于decision_speed才会补偿pitch角度
+#### -----装甲板跳变参数-----##### 
 jump_yaw_threshold_deg: 50.0 # degree 非前哨站判定为"大yaw跳变"的阈值
 jump_z_threshold: 0.07 # m 前哨站仍按z跳变判定
 jump_confirm_count: 3
@@ -52,15 +52,12 @@ jump_avg_alpha: 0.8  # 越大当前观测值比重越大，受噪声的影响越
 jump_fire_cooldown: 0.01 # s 固定延时(不使用动态参数时生效)
 outpost_jump_fire_cooldown: 0.05 # s 前哨站固定跳变发弹延时(不使用动态参数时生效)
 jump_min_interval: 0.01 # s 跳变最小间隔
+motion_state_enable: true  # 是否启用运动状态判定，启用后会根据目标运动状态调整planner的参数
+enable_imm: true  # 是否启用IMM，启用后会根据目标运动状态在多个卡尔曼滤波器间切换
+motion_w_low: 5.0 # rad/s 角速度低阈值(滞回下边界)，用于区分慢速/快速旋转
 
-motion_state_enable: true   # 是否启用旋转状态分类（slow/constant/variable），线速度单独输出
-
-# kalman相关参数 
-
-enable_imm: true  # 是否启用IMM，启用后由IMM三模型直接输出旋转状态分类
-motion_w_low: 5.0 # rad/s fallback角速度阈值：|w|超过后判为constant
-motion_dw_high: 0.5 # rad/s^2 fallback角加速度阈值：|alpha|超过后判为variable
-imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和为1): slow/constant/variable
+motion_dw_high: 0.5 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
+imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
 imm_r_yaw: 0.02 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
 imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
 imm_q_constant: [1e-4, 2e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
@@ -69,7 +66,7 @@ imm_alpha_decay_slow: 0.2 # slow模型下alpha衰减系数，越大角加速度�
 imm_alpha_decay_constant: 0.5 # constant模型下alpha衰减系数，常设高于slow以抑制伪加速度
 imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
 imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
-# 目标过程噪声 角速度/线速度 (你认为运动模型越不准，就把Q调的越大，否则就越小)
+# 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 100.0  #400
 target_process_noise_linear_outpost: 1.0
@@ -80,14 +77,13 @@ target_measurement_noise_pitch: 0.002
 # 目标匹配门控阈值（马氏距离平方 d^2）
 target_match_gate_tracked: 12.0     # 越大越宽松，越容易进入追踪，但是不一定准
 target_match_gate_init: 24.0    # 追踪初始化匹配门限，通常设为tracked的2倍或更大
-
 # 形态考核参数（平时别用）
 force_target_angular_velocity: false    # 只针对非前哨站目标生效，启用后会强制使用下面的角速度（rad/s），完整形态考核用
 forced_target_angular_velocity: 2.51 # rad/s
 
 #####-----aimer参数-----#####
-yaw_offset: -2.1  # 减小向右，增大向左
-pitch_offset: -0.3   # 增大向上 反之向下
+yaw_offset: -0.4   # 增大向左，减小向右
+pitch_offset: -0.9 # 增大向上 反之向下
 comming_angle: 55 # degree 55
 leaving_angle: 10 # degree 20
 comming_angle_high: 30 # degree 高速(角速度大)使用
@@ -114,6 +110,7 @@ auto_aim_fsm:
   pair_center_up: 8.0     # 对板 -> 车心 上行阈值
   pair_center_down: 6.5   # 车心 -> 对板 下行阈值
 
+# 越大越提前
 high_speed_delay_time: -0.05 # s
 low_speed_delay_time: -0.08 # s planner use this value
 outpost_delay_time: 0.06 # s 前哨站专用delay，不走low_speed_delay_time
@@ -124,37 +121,41 @@ second_tolerance: 2 # 远距离射击容差，degree
 judge_distance: 2 #距离判断阈值
 auto_fire: true # 是否由自瞄控制射击
 outpost_tolerance_deg: 3.0 # degree 前哨站专用：云台yaw跟踪误差容差，越大越容易开火，越小越严格
-outpost_phase_window_deg: 25.0 # degree 前哨站专用：装甲板相对车心允许开火的相位窗口，越大越早/越晚都可能开火
+outpost_phase_window_deg: 25.0 # degree 前哨站专用：装甲板相对旋转中心允许开火的相位窗口，越大越早/越晚都可能开火
 outpost_yaw_vel_threshold: 2.0 # rad/s 前哨站专用：command.yaw_vel上限，超过认为还在快速甩枪，不开火
 
-camera_name: "mindvision"
-# exposure_ms: 7.5
-exposure_ms: 6.0
+camera_name: "simulator"
+exposure_ms: 7.0
 gamma: 1.0
 gain: 400.0   
-vid_pid: "f622:d132"
-
+vid_pid: "f622:0001"  # 记得看相机pid
 
 R_gimbal2imubody: [1, 0, 0, 0, 1, 0, 0, 0, 1]
 
-camera_matrix: [1567.7907457705167, 0.0, 662.3933648922284, 0.0, 1564.9113082257936, 536.8662848443158, 0.0, 0.0, 1.0]
-distort_coeffs: [-0.3176141589160351, 0.16325331816941008, 0.0016205673676247642, 0.000574727471144031, 0.0]
+camera_matrix: [2085.8518909137497, 0.0, 636.8099094845275, 0.0, 2082.84996709917, 525.701630438037, 0.0, 0.0, 1.0]
+distort_coeffs: [-0.059448299297612375, 0.32250412735017253, 0.0015427764703439568, 0.001518245596842894, 0.0]
+
+# K = [2085.1, 0, 660.6695,0, 2081.9, 517.3946, 0, 0, 1]
+# D = [-0.0596, 0.3475,0.005814560627238968, -0.002087985180130278, 0.0]
 
 
+# 相机外参
+# 从云台看相机的位置
 R_camera2gimbal: [0, 0, 1, -1, 0, 0,0,-1,0]
-t_camera2gimbal: [0.07, 0.0, 0.03]  #0.10 0.07 0.10
+t_camera2gimbal: [0.12, 0.07, 0.12]  #0.10 0.07 0.10
 
 #####-----cboard参数-----#####
 quaternion_canid: 0x100
 bullet_speed_canid: 0x101
 send_canid: 0xff
 can_interface: "can0"
+# 一般不能修改C板角度（如果真有问题压力电控）
 phoenix_angle_unit: rad   # 下位机若发送角度(度)则设为deg，发送弧度则改为rad
 imu_yaw_offset_deg: 0.0   # IMU偏置补偿，单位degree
 imu_pitch_offset_deg: 0.0 # IMU偏置补偿，单位degree
 use_default_bullet_speed: true # true: 始终使用yaml中的bullet_speed，false: 使用下位机弹速(无效时回退)
 cboard_debug_log: false    # 排障时设true，打印原始/解析后的下位机数据
-use_identity_pose: true  # 是否使用单位四元数作为云台姿态（调试用）
+use_identity_pose: false  # 是否使用单位四元数作为云台姿态（调试用）
 
 #####-----目标稳定性参数-----#####
 target_jump_angle_threshold_deg: 1.0   # 判定为"大跳变"的角度阈值（度），超过此值则平滑过渡
@@ -180,11 +181,13 @@ Q_yaw: [9e6,1e3]   # [角度误差惩罚, 角速度误差惩罚]
 R_yaw: [1]
 
 max_pitch_acc: 50
-Q_pitch: [8e6,1e3]   # [角度误差惩罚, 角速度误差惩罚]
+Q_pitch: [9e6,1e3]   # [角度误差惩罚, 角速度误差惩罚]
 R_pitch: [1]
 
 #####-----buff_detector参数-----#####
 model: "assets/yolo11_buff_int8.xml"
+
+# 明显超时，然后瞄准经常飘动，应该是相机不断重启，经常提前预瞄，需要减少预瞄时间，需要更多参数 
 
 #####-----buff_aimer参数-----#####
 fire_gap_time: 0.700   # s

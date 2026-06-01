@@ -65,20 +65,29 @@ public:
     double ft_angle; //无人机专有
 
     CBoard(const std::string& config_path);
+    virtual ~CBoard() = default;
 
     // 启动接收线程
     void start();
 
-    Eigen::Quaterniond imu_at(std::chrono::steady_clock::time_point timestamp);
+    virtual Eigen::Quaterniond imu_at(std::chrono::steady_clock::time_point timestamp);
 
     // 上发下
-    void send(Command command);
+    virtual void send(Command command);
 
     // 获取下位机反馈的原始云台数据
     float feedback_yaw() const { return feedback_yaw_; }
     float feedback_pitch() const { return feedback_pitch_; }
     float feedback_yaw_vel() const { return feedback_yaw_vel_; }
     float feedback_pitch_vel() const { return feedback_pitch_vel_; }
+
+protected:
+    /// Protected default ctor for subclasses that do not use serial/CAN.
+    CBoard()
+        : bullet_speed(25.0), yaw_vel(0.0), pitch_vel(0.0),
+          mode(Mode::idle), shoot_mode(ShootMode::both_shoot), ft_angle(0.0),
+          queue_(64)  // small dummy queue, subclass won't use it
+    {}
 
 private:
     struct IMUData {

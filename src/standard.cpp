@@ -8,6 +8,8 @@
 
 #include "io/camera.hpp"
 #include "io/cboard.hpp"
+#include "io/simulator/cboard.hpp"
+#include "yaml-cpp/yaml.h"
 #include "tasks/auto_aim/aimer.hpp"
 #include "tasks/auto_aim/planner/planner.hpp"
 #include "tasks/auto_aim/multithread/commandgener.hpp"
@@ -31,11 +33,13 @@ using namespace std::chrono;
 
 const std::string keys =
     "{help h usage ? |      | 输出命令行参数说明}"
-    "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }";
+    "{@config-path   | configs/standard3.yaml | 位置参数，yaml配置文件路径 }"
+    "{simulator s    |      | 启用 simulator 模式 (从共享内存读取 IMU/模式/弹速) }";
 
 int main(int argc, char* argv[]) {
     cv::CommandLineParser cli(argc, argv, keys);
     auto config_path = cli.get<std::string>(0);
+    bool use_simulator = cli.has("simulator");
     if (cli.has("help") || config_path.empty()) {
         cli.printMessage();
         return 0;
@@ -45,7 +49,36 @@ int main(int argc, char* argv[]) {
     tools::Plotter plotter;
     tools::Recorder recorder;
 
-    io::CBoard cboard(config_path);
+    // --- CBoard: 两种实现，统一接口 via lambdas ---
+    io::CBoard serial_cboard(config_path);           // real hardware
+    io::SimulatorCBoard sim_cboard;                  // simulator
+
+    // Pointers / refs used in the main loop:
+    std::function<Eigen::Quaterniond()> get_imu;
+    std::function<void(io::Command)>   send_cmd;
+    std::function<int()>               get_mode;
+    std::function<double()>            get_bullet_speed;
+
+    if (use_simulator) {
+        sim_cboard.open();
+        tools::logger()->info("Using SimulatorCBoard (shared memory)");
+        get_imu = [&]() -> Eigen::Quaterniond {
+            Eigen::Quaterniond q = sim_cboard.imu_at();
+            return q;
+        };
+        get_mode = [&]() -> int { return sim_cboard.mode; };
+        send_cmd = [&](io::Command cmd) { sim_cboard.send(cmd); };
+        get_bullet_speed = [&]() -> double { return sim_cboard.bullet_speed; };
+    } else {
+        tools::logger()->info("Using CBoard (serial)");
+        get_imu = [&]() -> Eigen::Quaterniond {
+            return serial_cboard.imu_at(std::chrono::steady_clock::now() - 1ms);
+        };
+        get_mode = [&]() -> int { return static_cast<int>(serial_cboard.mode); };
+        send_cmd = [&](io::Command cmd) { serial_cboard.send(cmd); };
+        get_bullet_speed = [&]() -> double { return serial_cboard.bullet_speed; };
+    }
+
     io::Camera camera(config_path);
 
     auto_aim::YOLO detector(config_path, false);
@@ -64,23 +97,23 @@ int main(int argc, char* argv[]) {
     cv::Mat img;
     Eigen::Quaterniond q;
     std::chrono::steady_clock::time_point t;
+    double bullet_speed = 25.0;
 
-    auto mode       = io::Mode::idle;
-    auto last_mode  = io::Mode::idle;
+    int mode       = 0;          // 0=idle, 1=auto_aim, 2=small_buff, 3=big_buff, 4=outpost
+    int last_mode  = -1;
     int frame_count = 0;
     io::Command last_command = {false, false, 0.0, 0.0, 0.0, 0.0};
-    int total_armors = 0;  // 总检测到的装甲板数量
-    int detected_frames = 0;  // 检测到装甲板的帧数
-    
-
+    int total_armors = 0;
+    int detected_frames = 0;
 
     while (!exiter.exit()) {
         camera.read(img, t);
-        q    = cboard.imu_at(t - 1ms);
-        mode = cboard.mode;
+        q            = get_imu();
+        mode         = get_mode();
+        bullet_speed = get_bullet_speed();
 
         if (last_mode != mode) {
-            tools::logger()->info("Switch to {}", io::MODES[mode]);
+            tools::logger()->info("Switch to mode {}", mode);
             last_mode = mode;
         }
 
@@ -97,19 +130,19 @@ int main(int argc, char* argv[]) {
             if (mode == io::Mode::small_buff) {
                 buff_small_target.get_target(power_runes, t);
                 auto target_copy = buff_small_target;
-                buff_command = buff_aimer.aim(target_copy, t, cboard.bullet_speed, true);
+                buff_command = buff_aimer.aim(target_copy, t, bullet_speed, true);
             } else {
                 buff_big_target.get_target(power_runes, t);
                 auto target_copy = buff_big_target;
-                buff_command = buff_aimer.aim(target_copy, t, cboard.bullet_speed, true);
+                buff_command = buff_aimer.aim(target_copy, t, bullet_speed, true);
             }
-            cboard.send(buff_command);
+            send_cmd(buff_command);
             frame_count++;
             continue;
         }
 
         if (mode != io::Mode::auto_aim && mode != io::Mode::outpost) {
-            cboard.send({false, false, 0.0, 0.0, 0.0, 0.0});
+            send_cmd({false, false, 0.0, 0.0, 0.0, 0.0});
             frame_count++;
             continue;
         }
@@ -123,10 +156,10 @@ int main(int argc, char* argv[]) {
         auto tracker_start = std::chrono::steady_clock::now();
         auto targets       = tracker.track(armors, t);
         auto aimer_start   = std::chrono::steady_clock::now();
-        auto command       = aimer.aim(targets, t, cboard.bullet_speed);
+        auto command       = aimer.aim(targets, t, bullet_speed);
         
         if (!targets.empty()) {
-            auto plan = planner.plan(targets.front(), cboard.bullet_speed);
+            auto plan = planner.plan(targets.front(), bullet_speed);
             if (plan.control) {
                 // 使用 MPC (Planner) 的结果（位置+速度）覆盖 Aimer 的结果
                 command.yaw       = plan.yaw;
@@ -252,7 +285,7 @@ int main(int argc, char* argv[]) {
         // if (key == 'q')
         //    break;
 
-        cboard.send(command);
+        send_cmd(command);
         frame_count++;
     }
         // 在程序结束时输出识别率

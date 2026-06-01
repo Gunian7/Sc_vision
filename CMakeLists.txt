@@ -54,6 +54,7 @@ add_executable(auto_buff_debug src/auto_buff_debug.cpp)
 add_executable(auto_buff_debug_mpc src/auto_buff_debug_mpc.cpp)
 add_executable(uav src/uav.cpp)
 add_executable(uav_debug src/uav_debug.cpp)
+add_executable(simulator src/simulator.cpp)
 add_executable(standard_mpc_se src/standard_mpc_se.cpp)
 
 target_link_libraries(standard ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
@@ -65,6 +66,7 @@ target_link_libraries(auto_buff_debug ${OpenCV_LIBS} yaml-cpp auto_buff tools io
 target_link_libraries(auto_buff_debug_mpc ${OpenCV_LIBS} yaml-cpp auto_buff tools io ${CERES_LIBRARIES})
 target_link_libraries(uav ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(uav_debug ${OpenCV_LIBS} yaml-cpp auto_aim tools io)
+target_link_libraries(simulator ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
 target_link_libraries(standard_mpc_se ${OpenCV_LIBS} yaml-cpp auto_aim auto_buff tools io)
 
 ##################calibration################

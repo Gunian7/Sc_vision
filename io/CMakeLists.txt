@@ -11,6 +11,7 @@ add_library(io STATIC
     mindvision/mindvision.cpp  
     usbcamera/usbcamera.cpp  
     simulator/simulator.cpp
+    simulator/cboard.cpp
     camera.cpp
     cboard.cpp
     dm_imu/dm_imu.cpp

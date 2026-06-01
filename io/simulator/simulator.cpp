@@ -14,6 +14,14 @@ namespace io
 static constexpr const char * SHM_NAME = "/simulator_frame";
 static constexpr const char * SEM_NAME = "/simulator_sem";
 
+/// Helper: read a scalar value from shared memory at a given offset.
+template <typename T>
+static T shm_read(const void * base, std::size_t offset) {
+    T val;
+    std::memcpy(&val, static_cast<const uint8_t *>(base) + offset, sizeof(T));
+    return val;
+}
+
 SimulatorCamera::SimulatorCamera()
 : shm_fd_(-1),
   shm_ptr_(nullptr),
@@ -47,7 +55,8 @@ SimulatorCamera::SimulatorCamera()
       std::to_string(width_) + "x" + std::to_string(height_) + ")");
   }
 
-  map_size_ = 16 + static_cast<std::size_t>(width_) * height_ * 3;
+  // Total size: offset 36 + pixel data
+  map_size_ = ShmLayout::OFFSET_PIXEL_DATA + static_cast<std::size_t>(width_) * height_ * 3;
 
   // Mmap
   shm_ptr_ = ::mmap(nullptr, map_size_, PROT_READ | PROT_WRITE,
@@ -83,25 +92,19 @@ void SimulatorCamera::read(cv::Mat & img, std::chrono::steady_clock::time_point 
   }
 
   // Wait for the writer to signal that a new frame is ready.
-  // The writer posts the semaphore after writing; we wait here.
   ::sem_wait(sem);
 
   // Read timestamp from offset 8
-  int64_t ts_ns;
-  std::memcpy(&ts_ns, static_cast<const uint8_t *>(shm_ptr_) + 8, sizeof(ts_ns));
+  int64_t ts_ns = shm_read<int64_t>(shm_ptr_, ShmLayout::OFFSET_TIMESTAMP_NS);
 
   // Convert ns -> steady_clock::time_point.
-  // Use system_clock epoch as bridge (both writer and reader run on the same
-  // machine so CLOCK_REALTIME is consistent).
   auto ts_sys = std::chrono::system_clock::time_point(
     std::chrono::nanoseconds(ts_ns));
-  timestamp = std::chrono::steady_clock::now();  // best-effort: we don't have a
-                                                  // monotonic ns from the writer.
-  (void)ts_sys;  // Could be used for synchronisation if needed.
+  timestamp = std::chrono::steady_clock::now();  // best-effort
 
   // Build cv::Mat that wraps the shared memory (zero-copy until clone).
-  // Layout in shm: offset 16 = pixel data, rows = height, cols = width, RGB8.
-  const uint8_t * pixel_base = static_cast<const uint8_t *>(shm_ptr_) + 16;
+  const uint8_t * pixel_base = static_cast<const uint8_t *>(shm_ptr_) +
+                               ShmLayout::OFFSET_PIXEL_DATA;
   cv::Mat raw(height_, width_, CV_8UC3, const_cast<uint8_t *>(pixel_base));
 
   // Clone so the caller owns the data independently of the shared memory.
@@ -109,6 +112,31 @@ void SimulatorCamera::read(cv::Mat & img, std::chrono::steady_clock::time_point 
 
   // Post semaphore to let the writer produce the next frame.
   ::sem_post(sem);
+}
+
+/// Read gimbal yaw from the shared memory (radians).
+float read_gimbal_yaw(const void * shm_ptr) {
+    return shm_read<float>(shm_ptr, ShmLayout::OFFSET_GIMBAL_YAW);
+}
+
+/// Read gimbal pitch from the shared memory (radians).
+float read_gimbal_pitch(const void * shm_ptr) {
+    return shm_read<float>(shm_ptr, ShmLayout::OFFSET_GIMBAL_PITCH);
+}
+
+/// Read gimbal roll from the shared memory (radians).
+float read_gimbal_roll(const void * shm_ptr) {
+    return shm_read<float>(shm_ptr, ShmLayout::OFFSET_GIMBAL_ROLL);
+}
+
+/// Read bullet speed from the shared memory (m/s).
+float read_bullet_speed(const void * shm_ptr) {
+    return shm_read<float>(shm_ptr, ShmLayout::OFFSET_BULLET_SPEED);
+}
+
+/// Read operating mode from the shared memory (int32_t).
+int32_t read_mode(const void * shm_ptr) {
+    return shm_read<int32_t>(shm_ptr, ShmLayout::OFFSET_MODE);
 }
 
 }  // namespace io
