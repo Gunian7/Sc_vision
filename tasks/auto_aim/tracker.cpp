@@ -601,18 +601,22 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
   int best_id = -1;
   if (select_best_candidate(target_, candidates, &best_armor_index, &best_id)) {
     const auto & armor = candidates[best_armor_index];
-    target_.apply_measurement_bookkeeping(armor, best_id);
+
+    // 主 EKF 恢复闭环：记账 + 四维量测更新，与非 IMM 分支同一条路径
+    target_.update_matched(armor, best_id);
 
     // 直接观测补偿装甲板 id 后的旋转中心 yaw 位置
     const double armor_num = static_cast<double>(target_.armor_num());
     const double observed_center_yaw = tools::limit_rad(
       armor.ypr_in_world[0] - best_id * 2.0 * M_PI / armor_num);
 
-    found = spin_imm_.update(observed_center_yaw, measurement_noise_yaw_);
-    if (found) {
+    // IMM 并行更新旋转通道：只产出 yaw/w/alpha 给下游，不再决定 found
+    if (spin_imm_.update(observed_center_yaw, measurement_noise_yaw_)) {
       // IMM 的 yaw/v_yaw/alpha_yaw 直接输出给下游，不写回 EKF
       target_.set_imm_output(spin_imm_.yaw(), spin_imm_.v_yaw(), spin_imm_.alpha_yaw());
     }
+
+    found = true;
   }
 
   if (force_target_angular_velocity_) {

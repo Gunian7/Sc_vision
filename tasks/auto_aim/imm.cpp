@@ -220,18 +220,31 @@ void IMMFilter::mix_states()
     }
 
     // Mix 3D states [yaw, v_yaw, alpha_yaw]
+    // yaw is circular: unwrap each model's yaw onto the branch of the
+    // highest-weight model before averaging, otherwise mixing across the
+    // +/-pi boundary yields a value up to pi away from the true angle
+    size_t ref = 0;
+    for (size_t i = 1; i < kModelCount; ++i) {
+      if (mix_weights[i] > mix_weights[ref]) ref = i;
+    }
+    const double ref_yaw = prior[ref].x[kYawIdx];
+
     double mixed_yaw = 0.0;
     double mixed_v = 0.0;
     double mixed_alpha = 0.0;
     for (size_t i = 0; i < kModelCount; ++i) {
-      mixed_yaw += mix_weights[i] * prior[i].x[kYawIdx];
+      const double yaw_i = ref_yaw + normalize_angle(prior[i].x[kYawIdx] - ref_yaw);
+      mixed_yaw += mix_weights[i] * yaw_i;
       mixed_v += mix_weights[i] * prior[i].x[kVIdx];
       mixed_alpha += mix_weights[i] * prior[i].x[kAlphaIdx];
     }
+    mixed_yaw = normalize_angle(mixed_yaw);
 
     Eigen::Matrix3d mixed_P = Eigen::Matrix3d::Zero();
     for (size_t i = 0; i < kModelCount; ++i) {
-      Eigen::Vector3d dx = prior[i].x - Eigen::Vector3d(mixed_yaw, mixed_v, mixed_alpha);
+      const double yaw_i = ref_yaw + normalize_angle(prior[i].x[kYawIdx] - ref_yaw);
+      Eigen::Vector3d dx(yaw_i - mixed_yaw, prior[i].x[kVIdx] - mixed_v,
+                         prior[i].x[kAlphaIdx] - mixed_alpha);
       mixed_P += mix_weights[i] * (prior[i].P + dx * dx.transpose());
     }
 

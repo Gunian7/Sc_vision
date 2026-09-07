@@ -42,6 +42,7 @@ public:
   void predict(double dt);
   void update(const Armor & armor);
   bool match_and_update(const std::vector<Armor> & armors);
+  bool update_matched(const Armor & armor, int id);
   void apply_measurement_bookkeeping(const Armor & armor, int id);
 
   Eigen::VectorXd ekf_x() const;

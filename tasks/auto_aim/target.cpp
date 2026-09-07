@@ -260,6 +260,15 @@ bool Target::match_and_update(const std::vector<Armor> & armors)
   return true;
 }
 
+// 对外部已确定匹配关系的装甲板执行记账 + 量测更新（供 Tracker 的 IMM 并行路径使用）
+bool Target::update_matched(const Armor & armor, int id)
+{
+  if (id < 0 || id >= armor_num_) return false;
+  apply_measurement_bookkeeping(armor, id);
+  update_ypda(armor, id);
+  return true;
+}
+
 int Target::match_armor_id(const Armor & armor, double * best_d2) const
 {
   const bool use_outpost_z_match =
