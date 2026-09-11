@@ -197,6 +197,12 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   if (yaml["motion_dw_high"].IsDefined()) {
     motion_dw_high_ = yaml["motion_dw_high"].as<double>();
   }
+  if (yaml["spin_state_confirm_frames"].IsDefined()) {
+    spin_confirm_frames_ = std::max(1, yaml["spin_state_confirm_frames"].as<int>());
+  }
+  if (yaml["spin_state_switch_margin"].IsDefined()) {
+    spin_switch_margin_ = yaml["spin_state_switch_margin"].as<double>();
+  }
   SpinIMM::Params imm_params;
   imm_params.transition << 0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90;
   imm_params.r_yaw = 2e-3;
@@ -255,6 +261,9 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
   }
   if (yaml["imm_mu_min"].IsDefined()) {
     imm_params.mu_min = yaml["imm_mu_min"].as<double>();
+  }
+  if (yaml["imm_nis_gate"].IsDefined()) {
+    imm_params.nis_gate = yaml["imm_nis_gate"].as<double>();
   }
   spin_imm_.set_params(imm_params);
 
@@ -545,6 +554,11 @@ bool Tracker::set_target(std::list<Armor> & armors, std::chrono::steady_clock::t
   imm_dw_lpf_ = 0.0;
   imm_last_t_ = t;
 
+  // 新目标重置 spin_state 滞回状态
+  confirmed_spin_state_ = SpinModel::slow;
+  pending_spin_state_ = SpinModel::slow;
+  pending_spin_count_ = 0;
+
   update_motion_state(target_, t);
   return true;
 }
@@ -642,6 +656,7 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
 
   Eigen::VectorXd fused_state = target.ekf_x();
   SpinModel spin_state = SpinModel::slow;
+  SpinModel candidate = SpinModel::slow;
 
   if (imm_enabled_ && spin_imm_.initialized()) {
     // Use IMM's fused v_yaw and alpha_yaw directly
@@ -658,13 +673,13 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
     const size_t best_model_index = std::distance(model_probs.begin(), best_model_it);
     switch (best_model_index) {
       case 0:
-        spin_state = SpinModel::slow;
+        candidate = SpinModel::slow;
         break;
       case 1:
-        spin_state = SpinModel::constant;
+        candidate = SpinModel::constant;
         break;
       default:
-        spin_state = SpinModel::variable;
+        candidate = SpinModel::variable;
         break;
     }
   } else if (motion_state_enabled_) {
@@ -674,13 +689,36 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
     const double abs_alpha = std::abs(alpha_for_fallback);
 
     if (abs_alpha >= motion_dw_high_) {
-      spin_state = SpinModel::variable;
+      candidate = SpinModel::variable;
     } else if (abs_w >= motion_w_low_) {
-      spin_state = SpinModel::constant;
+      candidate = SpinModel::constant;
     } else {
-      spin_state = SpinModel::slow;
+      candidate = SpinModel::slow;
     }
   }
+
+  // spin_state 滞回：候选状态需连续确认若干帧（IMM 路径还要求概率优势）才切换，
+  // 避免野值或概率互抖导致状态来回跳变
+  if (candidate == confirmed_spin_state_) {
+    pending_spin_state_ = candidate;
+    pending_spin_count_ = 0;
+  } else if (candidate == pending_spin_state_) {
+    pending_spin_count_++;
+  } else {
+    pending_spin_state_ = candidate;
+    pending_spin_count_ = 1;
+  }
+
+  bool switch_allowed = pending_spin_count_ >= spin_confirm_frames_;
+  if (switch_allowed && imm_enabled_ && spin_imm_.initialized()) {
+    switch_allowed = model_probs[static_cast<size_t>(pending_spin_state_)] >
+                     model_probs[static_cast<size_t>(confirmed_spin_state_)] + spin_switch_margin_;
+  }
+  if (switch_allowed) {
+    confirmed_spin_state_ = pending_spin_state_;
+    pending_spin_count_ = 0;
+  }
+  spin_state = confirmed_spin_state_;
 
   double w = 0.0;
   double alpha = 0.0;

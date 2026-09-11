@@ -72,6 +72,13 @@ private:
   double imm_dw_lpf_;
   std::chrono::steady_clock::time_point imm_last_t_;
 
+  // spin_state 滞回切换：抑制单帧野值和模型概率互抖
+  SpinModel confirmed_spin_state_ = SpinModel::slow;
+  SpinModel pending_spin_state_ = SpinModel::slow;
+  int pending_spin_count_ = 0;
+  int spin_confirm_frames_ = 4;
+  double spin_switch_margin_ = 0.1;
+
   void state_machine(bool found);
   void update_motion_state(Target & target, std::chrono::steady_clock::time_point t);
 

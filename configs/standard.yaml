@@ -66,6 +66,9 @@ imm_alpha_decay_slow: 0.2 # slow模型下alpha衰减系数，越大角加速度�
 imm_alpha_decay_constant: 0.5 # constant模型下alpha衰减系数，常设高于slow以抑制伪加速度
 imm_dt_min: 0.001 # s IMM时间步长下限，防止dt过小导致数值抖动
 imm_dt_max: 0.2 # s IMM时间步长上限，防止掉帧后dt过大导致发散
+imm_nis_gate: 9.0 # IMM野值门控：innovation马氏距离平方(χ²(1))超过该值时不修正模型，防止错配id/量化噪声踢飞w
+spin_state_confirm_frames: 4 # spin_state切换需要的连续确认帧数
+spin_state_switch_margin: 0.1 # spin_state切换需要的模型概率差(仅IMM路径生效)
 # 目标过程噪声 角速度/线速度 (Q越大，越依赖观测值)
 target_process_noise_linear_normal: 100.0  #100
 target_process_noise_angular_normal: 100.0  #400

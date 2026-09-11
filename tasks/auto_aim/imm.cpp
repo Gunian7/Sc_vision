@@ -34,6 +34,7 @@ IMMFilter::IMMFilter() : initialized_(false)
   params_.dt_min = 1e-3;
   params_.dt_max = 0.2;
   params_.mu_min = kDefaultMuMin;
+  params_.nis_gate = 9.0;
   reset();
 }
 
@@ -49,6 +50,7 @@ void IMMFilter::set_params(const Params & params)
     params_.mu_min = kDefaultMuMin;
   }
   params_.mu_min = std::clamp(params_.mu_min, 0.0, 1.0 / static_cast<double>(kModelCount));
+  params_.nis_gate = std::max(1.0, params_.nis_gate);
 }
 
 void IMMFilter::initialize(double yaw, double v_yaw, double alpha_yaw, double P_yaw, double P_v, double P_alpha)
@@ -469,6 +471,12 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
     model.innovation = innovation;
     model.innovation_var = S;
 
+    // χ² outlier gate: an implausible observation must not correct the model
+    if (innovation * innovation / S > params_.nis_gate) {
+      model.likelihood = 1.0;
+      return true;  // fused 状态保持 predict 的预测值
+    }
+
     // Kalman gain for 3x1 H = [1, 0, 0]
     const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
     const double K_v = model.P(kVIdx, kYawIdx) / S;
@@ -531,33 +539,38 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
     model.innovation = innovation;
     model.innovation_var = S;
 
-    // Kalman gain for 3x1 H = [1, 0, 0]
-    const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
-    const double K_v = model.P(kVIdx, kYawIdx) / S;
-    const double K_alpha = model.P(kAlphaIdx, kYawIdx) / S;
+    const double mahalanobis = innovation * innovation / S;
+    double likelihood = kEps;
 
-    // Update state
-    double yaw_upd = normalize_angle(model.x[kYawIdx] + K_yaw * innovation);
-    double v_upd = model.x[kVIdx] + K_v * innovation;
-    double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
+    // χ² outlier gate: an implausible observation must not correct the model,
+    // 其似然被压到下限，模型概率自然回落而不会被野值拉满
+    if (mahalanobis <= params_.nis_gate) {
+      // Kalman gain for 3x1 H = [1, 0, 0]
+      const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
+      const double K_v = model.P(kVIdx, kYawIdx) / S;
+      const double K_alpha = model.P(kAlphaIdx, kYawIdx) / S;
 
-    // Joseph form covariance update: P = (I-KH) P (I-KH)^T + K r K^T
-    // H = [1, 0, 0], so I-KH is the identity with column 0 subtracted by K.
-    const Eigen::Matrix<double, 3, 1> K_vec(K_yaw, K_v, K_alpha);
-    Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
-    A.col(0) -= K_vec;
-    const Eigen::Matrix3d P_upd =
-      A * model.P * A.transpose() + K_vec * r * K_vec.transpose();
+      // Update state
+      double yaw_upd = normalize_angle(model.x[kYawIdx] + K_yaw * innovation);
+      double v_upd = model.x[kVIdx] + K_v * innovation;
+      double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
 
-    model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
-    model.P = 0.5 * (P_upd + P_upd.transpose());
+      // Joseph form covariance update: P = (I-KH) P (I-KH)^T + K r K^T
+      // H = [1, 0, 0], so I-KH is the identity with column 0 subtracted by K.
+      const Eigen::Matrix<double, 3, 1> K_vec(K_yaw, K_v, K_alpha);
+      Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
+      A.col(0) -= K_vec;
+      const Eigen::Matrix3d P_upd =
+        A * model.P * A.transpose() + K_vec * r * K_vec.transpose();
 
-    // Likelihood
-    const double mahalanobis = innovation * innovation / std::max(kEps, S);
-    const double norm = std::sqrt(2.0 * kPi * std::max(kEps, S));
-    double likelihood = std::exp(-0.5 * mahalanobis) / norm;
-    if (!std::isfinite(likelihood) || likelihood < kEps) {
-      likelihood = kEps;
+      model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
+      model.P = 0.5 * (P_upd + P_upd.transpose());
+
+      const double norm = std::sqrt(2.0 * kPi * S);
+      likelihood = std::exp(-0.5 * mahalanobis) / norm;
+      if (!std::isfinite(likelihood) || likelihood < kEps) {
+        likelihood = kEps;
+      }
     }
 
     model.likelihood = likelihood;

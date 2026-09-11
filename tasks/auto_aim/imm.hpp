@@ -40,6 +40,7 @@ public:
     double dt_min;
     double dt_max;
     double mu_min;
+    double nis_gate;  // chi-square gate on innovation^2/S; gated observations do not correct the model
   };
 
   IMMFilter();
