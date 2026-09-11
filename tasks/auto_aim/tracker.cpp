@@ -671,16 +671,14 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
 
     const auto best_model_it = std::max_element(model_probs.begin(), model_probs.end());
     const size_t best_model_index = std::distance(model_probs.begin(), best_model_it);
-    switch (best_model_index) {
-      case 0:
-        candidate = SpinModel::slow;
-        break;
-      case 1:
-        candidate = SpinModel::constant;
-        break;
-      default:
-        candidate = SpinModel::variable;
-        break;
+
+    // IMM 的 Q 竞争只能区分"稳/变"分不出快慢（匀速快转和静止都是稳态）：
+    // 变速交给模型概率判定，快慢用转速阈值判定（fused_state[kIdxW] 已是 IMM 融合值）
+    if (best_model_index == 2) {
+      candidate = SpinModel::variable;
+    } else {
+      const double abs_w = fused_state.size() > kIdxW ? std::abs(fused_state[kIdxW]) : 0.0;
+      candidate = abs_w >= motion_w_low_ ? SpinModel::constant : SpinModel::slow;
     }
   } else if (motion_state_enabled_) {
     const double w_for_fallback = fused_state.size() > kIdxW ? fused_state[kIdxW] : 0.0;

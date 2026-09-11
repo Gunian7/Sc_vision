@@ -54,7 +54,7 @@ outpost_jump_fire_cooldown: 0.05 # s 前哨站固定跳变发弹延时(不使用
 jump_min_interval: 0.01 # s 跳变最小间隔
 motion_state_enable: true  # 是否启用运动状态判定，启用后会根据目标运动状态调整planner的参数
 enable_imm: true  # 是否启用IMM，启用后会根据目标运动状态在多个卡尔曼滤波器间切换
-motion_w_low: 5.0 # rad/s 角速度低阈值(滞回下边界)，用于区分慢速/快速旋转
+motion_w_low: 3.0 # rad/s 角速度阈值，区分slow/constant（IMM路径和fallback共用；IMM概率只负责判变速）
 
 motion_dw_high: 0.5 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
