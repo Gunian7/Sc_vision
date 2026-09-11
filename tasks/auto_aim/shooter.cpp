@@ -116,8 +116,10 @@ bool Shooter::shoot(
                      : first_tolerance_;
   // tools::logger()->debug("d(command.yaw) is {:.4f}", std::abs(last_command_.yaw - command.yaw));
   if (
-    std::abs(last_command_.yaw - command.yaw) < tolerance * 2 &&  //此时认为command突变不应该射击
-    std::abs(gimbal_pos[0] - last_command_.yaw) < tolerance &&    //应该减去上一次command的yaw值
+    std::abs(tools::limit_rad(last_command_.yaw - command.yaw)) <
+      tolerance * 2 &&                                            //此时认为command突变不应该射击
+    std::abs(tools::limit_rad(gimbal_pos[0] - last_command_.yaw)) <
+      tolerance &&                                                //应该减去上一次command的yaw值
     aimer.debug_aim_point.valid) {
     last_command_ = command;
     return true;

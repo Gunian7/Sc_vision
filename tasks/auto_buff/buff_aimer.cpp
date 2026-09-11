@@ -179,7 +179,7 @@ bool Aimer::get_send_angle(
 
   // 计算新的目标点的空间坐标
   aim_in_world = target.point_buff2world(Eigen::Vector3d(0.0, 0.0, 0.7));
-  d = fsqrt(aim_in_world[0] * aim_in_world[0] + aim_in_world[1] * aim_in_world[1]);
+  d = std::sqrt(aim_in_world[0] * aim_in_world[0] + aim_in_world[1] * aim_in_world[1]);
   h = aim_in_world[2];
   tools::Trajectory trajectory1(bullet_speed, d, h);
   if (trajectory1.unsolvable) {  // 如果弹道无法解算，返回未命中结果

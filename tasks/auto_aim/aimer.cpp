@@ -125,6 +125,17 @@ io::Command Aimer::aim(
     target.predict(future);
   }
 
+  // FSM 每帧只推进一次：choose_aim_point 在下面的弹道迭代里会被调用多次
+  {
+    const double spin_w = (std::abs(target.imm_w()) > 1e-6) ? target.imm_w() : target.ekf_x()[7];
+    if (fsm_enable_) {
+      fsm_controller_.update(spin_w, target.jumped);
+      fsm_state_ = fsm_controller_.state();
+    } else {
+      fsm_state_ = AutoAimFsm::AIM_SINGLE_ARMOR;
+    }
+  }
+
   auto aim_point0 = choose_aim_point(target, 0.0);
   debug_aim_point = aim_point0;
   if (!aim_point0.valid) {
@@ -229,12 +240,6 @@ AimPoint Aimer::choose_aim_point(const Target & target, double fly_time)
   }
 
   const double spin_w = (std::abs(target.imm_w()) > 1e-6) ? target.imm_w() : ekf_x[7];
-  if (fsm_enable_) {
-    fsm_controller_.update(spin_w, target.jumped);
-    fsm_state_ = fsm_controller_.state();
-  } else {
-    fsm_state_ = AutoAimFsm::AIM_SINGLE_ARMOR;
-  }
 
   // 如果装甲板未发生过跳变，则只有当前装甲板的位置已知
   if (!target.jumped) return {true, armor_xyza_list[0]};

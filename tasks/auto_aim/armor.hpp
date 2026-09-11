@@ -91,7 +91,8 @@ struct Armor
 
   ArmorType type;
   ArmorName name;
-  ArmorPriority priority;
+  // 默认同优先级，避免未赋值时按内存垃圾值排序选板（步兵路径没有 decider.set_priority）
+  ArmorPriority priority = ArmorPriority::first;
   int class_id;
   cv::Rect box;
   cv::Mat pattern;

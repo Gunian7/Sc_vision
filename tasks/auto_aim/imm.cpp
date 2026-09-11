@@ -2,6 +2,8 @@
 
 #include <Eigen/Eigenvalues>
 
+#include "tools/logger.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -328,6 +330,26 @@ void IMMFilter::fuse_output()
     double da = models_[i].x[kAlphaIdx] - fused_alpha_yaw_;
     fused_P_alpha_ += weights[i] * (models_[i].P(kAlphaIdx, kAlphaIdx) + da * da);
   }
+
+  // PSD watchdog: model covariance must stay positive definite
+  for (size_t i = 0; i < kModelCount; ++i) {
+    if (models_[i].x.size() == 0) {
+      continue;
+    }
+    Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(
+      0.5 * (models_[i].P + models_[i].P.transpose()));
+    if (solver.info() != Eigen::Success) {
+      continue;
+    }
+    const double min_eigenvalue = solver.eigenvalues().minCoeff();
+    if (min_eigenvalue < -1e-9) {
+      static int psd_warn_count = 0;
+      if (++psd_warn_count % 100 == 1) {
+        tools::logger()->warn(
+          "[IMM] model {} covariance lost PSD, min eigenvalue {:.3e}", i, min_eigenvalue);
+      }
+    }
+  }
 }
 
 void IMMFilter::predict(double dt)
@@ -442,7 +464,7 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
 
     // H = [1, 0, 0] - observe yaw position
     double innovation = normalize_angle(observed_yaw - model.x[kYawIdx]);
-    const double S = model.P(kYawIdx, kYawIdx) + r;
+    const double S = std::max(model.P(kYawIdx, kYawIdx) + r, 1e-6);
 
     model.innovation = innovation;
     model.innovation_var = S;
@@ -457,78 +479,14 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
     double v_upd = model.x[kVIdx] + K_v * innovation;
     double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
 
-    // Joseph form covariance update (3x3)
-    // I - K*H = I - [K;0;0] = [[1-K0, 0, 0], [-K1, 1, 0], [-K2, 0, 1]]
-    const double I_KH_00 = 1.0 - K_yaw;
-    const double I_KH_10 = -K_v;
-    const double I_KH_20 = -K_alpha;
-
-    // P_new = (I-KH) * P * (I-KH)^T + K * R * K^T
-    // R is scalar r, K*R*K^T = r * K * K^T
-    Eigen::Matrix3d P_upd;
-    // Row 0
-    P_upd(0, 0) = I_KH_00 * model.P(0, 0) * I_KH_00 +
-                  I_KH_00 * model.P(0, 1) * I_KH_10 +
-                  I_KH_00 * model.P(0, 2) * I_KH_20 +
-                  K_yaw * r * K_yaw;
-    P_upd(0, 1) = I_KH_00 * model.P(0, 0) * (-K_v) +
-                  I_KH_00 * model.P(0, 1) * 1.0 +
-                  I_KH_00 * model.P(0, 2) * 0.0 +
-                  K_yaw * r * K_v;
-    P_upd(0, 2) = I_KH_00 * model.P(0, 0) * (-K_alpha) +
-                  I_KH_00 * model.P(0, 1) * 0.0 +
-                  I_KH_00 * model.P(0, 2) * 1.0 +
-                  K_yaw * r * K_alpha;
-    // Row 1
-    P_upd(1, 0) = I_KH_10 * model.P(0, 0) * I_KH_00 +
-                  1.0 * model.P(1, 0) * I_KH_00 +
-                  0.0 * model.P(2, 0) * I_KH_00 +
-                  K_v * r * K_yaw;
-    P_upd(1, 1) = I_KH_10 * model.P(0, 0) * (-K_v) +
-                  1.0 * model.P(1, 0) * (-K_v) +
-                  0.0 * model.P(2, 0) * (-K_v) +
-                  I_KH_10 * model.P(0, 1) * 1.0 +
-                  1.0 * model.P(1, 1) * 1.0 +
-                  0.0 * model.P(2, 1) * 1.0 +
-                  I_KH_10 * model.P(0, 2) * 0.0 +
-                  1.0 * model.P(1, 2) * 0.0 +
-                  0.0 * model.P(2, 2) * 0.0 +
-                  K_v * r * K_v;
-    P_upd(1, 2) = I_KH_10 * model.P(0, 0) * (-K_alpha) +
-                  1.0 * model.P(1, 0) * (-K_alpha) +
-                  0.0 * model.P(2, 0) * (-K_alpha) +
-                  I_KH_10 * model.P(0, 1) * 0.0 +
-                  1.0 * model.P(1, 1) * 0.0 +
-                  0.0 * model.P(2, 1) * 0.0 +
-                  I_KH_10 * model.P(0, 2) * 1.0 +
-                  1.0 * model.P(1, 2) * 1.0 +
-                  0.0 * model.P(2, 2) * 1.0 +
-                  K_v * r * K_alpha;
-    // Row 2
-    P_upd(2, 0) = I_KH_20 * model.P(0, 0) * I_KH_00 +
-                  0.0 * model.P(1, 0) * I_KH_00 +
-                  1.0 * model.P(2, 0) * I_KH_00 +
-                  K_alpha * r * K_yaw;
-    P_upd(2, 1) = I_KH_20 * model.P(0, 0) * (-K_v) +
-                  0.0 * model.P(1, 0) * (-K_v) +
-                  1.0 * model.P(2, 0) * (-K_v) +
-                  I_KH_20 * model.P(0, 1) * 1.0 +
-                  0.0 * model.P(1, 1) * 1.0 +
-                  1.0 * model.P(2, 1) * 1.0 +
-                  I_KH_20 * model.P(0, 2) * 0.0 +
-                  0.0 * model.P(1, 2) * 0.0 +
-                  1.0 * model.P(2, 2) * 0.0 +
-                  K_alpha * r * K_v;
-    P_upd(2, 2) = I_KH_20 * model.P(0, 0) * (-K_alpha) +
-                  0.0 * model.P(1, 0) * (-K_alpha) +
-                  1.0 * model.P(2, 0) * (-K_alpha) +
-                  I_KH_20 * model.P(0, 1) * 0.0 +
-                  0.0 * model.P(1, 1) * 0.0 +
-                  1.0 * model.P(2, 1) * 0.0 +
-                  I_KH_20 * model.P(0, 2) * 1.0 +
-                  0.0 * model.P(1, 2) * 1.0 +
-                  1.0 * model.P(2, 2) * 1.0 +
-                  K_alpha * r * K_alpha;
+    // Joseph form covariance update: P = (I-KH) P (I-KH)^T + K r K^T
+    // H = [1, 0, 0], so I-KH is the identity with column 0 subtracted by K.
+    // 用矩阵表达式而不是手写展开，避免逐项推导时转置方向出错
+    const Eigen::Matrix<double, 3, 1> K_vec(K_yaw, K_v, K_alpha);
+    Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
+    A.col(0) -= K_vec;
+    const Eigen::Matrix3d P_upd =
+      A * model.P * A.transpose() + K_vec * r * K_vec.transpose();
 
     model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
     model.P = 0.5 * (P_upd + P_upd.transpose());
@@ -568,7 +526,7 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
 
     // H = [1, 0, 0] - observe yaw position
     double innovation = normalize_angle(observed_yaw - model.x[kYawIdx]);
-    const double S = model.P(kYawIdx, kYawIdx) + r;
+    const double S = std::max(model.P(kYawIdx, kYawIdx) + r, 1e-6);
 
     model.innovation = innovation;
     model.innovation_var = S;
@@ -583,73 +541,13 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
     double v_upd = model.x[kVIdx] + K_v * innovation;
     double alpha_upd = model.x[kAlphaIdx] + K_alpha * innovation;
 
-    // Joseph form covariance update
-    // Same as locked model case
-    const double I_KH_00 = 1.0 - K_yaw;
-    const double I_KH_10 = -K_v;
-    const double I_KH_20 = -K_alpha;
-
-    Eigen::Matrix3d P_upd;
-    P_upd(0, 0) = I_KH_00 * model.P(0, 0) * I_KH_00 +
-                  I_KH_00 * model.P(0, 1) * I_KH_10 +
-                  I_KH_00 * model.P(0, 2) * I_KH_20 +
-                  K_yaw * r * K_yaw;
-    P_upd(0, 1) = I_KH_00 * model.P(0, 0) * (-K_v) +
-                  I_KH_00 * model.P(0, 1) * 1.0 +
-                  I_KH_00 * model.P(0, 2) * 0.0 +
-                  K_yaw * r * K_v;
-    P_upd(0, 2) = I_KH_00 * model.P(0, 0) * (-K_alpha) +
-                  I_KH_00 * model.P(0, 1) * 0.0 +
-                  I_KH_00 * model.P(0, 2) * 1.0 +
-                  K_yaw * r * K_alpha;
-    P_upd(1, 0) = I_KH_10 * model.P(0, 0) * I_KH_00 +
-                  1.0 * model.P(1, 0) * I_KH_00 +
-                  0.0 * model.P(2, 0) * I_KH_00 +
-                  K_v * r * K_yaw;
-    P_upd(1, 1) = I_KH_10 * model.P(0, 0) * (-K_v) +
-                  1.0 * model.P(1, 0) * (-K_v) +
-                  0.0 * model.P(2, 0) * (-K_v) +
-                  I_KH_10 * model.P(0, 1) * 1.0 +
-                  1.0 * model.P(1, 1) * 1.0 +
-                  0.0 * model.P(2, 1) * 1.0 +
-                  I_KH_10 * model.P(0, 2) * 0.0 +
-                  1.0 * model.P(1, 2) * 0.0 +
-                  0.0 * model.P(2, 2) * 0.0 +
-                  K_v * r * K_v;
-    P_upd(1, 2) = I_KH_10 * model.P(0, 0) * (-K_alpha) +
-                  1.0 * model.P(1, 0) * (-K_alpha) +
-                  0.0 * model.P(2, 0) * (-K_alpha) +
-                  I_KH_10 * model.P(0, 1) * 0.0 +
-                  1.0 * model.P(1, 1) * 0.0 +
-                  0.0 * model.P(2, 1) * 0.0 +
-                  I_KH_10 * model.P(0, 2) * 1.0 +
-                  1.0 * model.P(1, 2) * 1.0 +
-                  0.0 * model.P(2, 2) * 1.0 +
-                  K_v * r * K_alpha;
-    P_upd(2, 0) = I_KH_20 * model.P(0, 0) * I_KH_00 +
-                  0.0 * model.P(1, 0) * I_KH_00 +
-                  1.0 * model.P(2, 0) * I_KH_00 +
-                  K_alpha * r * K_yaw;
-    P_upd(2, 1) = I_KH_20 * model.P(0, 0) * (-K_v) +
-                  0.0 * model.P(1, 0) * (-K_v) +
-                  1.0 * model.P(2, 0) * (-K_v) +
-                  I_KH_20 * model.P(0, 1) * 1.0 +
-                  0.0 * model.P(1, 1) * 1.0 +
-                  1.0 * model.P(2, 1) * 1.0 +
-                  I_KH_20 * model.P(0, 2) * 0.0 +
-                  0.0 * model.P(1, 2) * 0.0 +
-                  1.0 * model.P(2, 2) * 0.0 +
-                  K_alpha * r * K_v;
-    P_upd(2, 2) = I_KH_20 * model.P(0, 0) * (-K_alpha) +
-                  0.0 * model.P(1, 0) * (-K_alpha) +
-                  1.0 * model.P(2, 0) * (-K_alpha) +
-                  I_KH_20 * model.P(0, 1) * 0.0 +
-                  0.0 * model.P(1, 1) * 0.0 +
-                  1.0 * model.P(2, 1) * 0.0 +
-                  I_KH_20 * model.P(0, 2) * 1.0 +
-                  0.0 * model.P(1, 2) * 1.0 +
-                  1.0 * model.P(2, 2) * 1.0 +
-                  K_alpha * r * K_alpha;
+    // Joseph form covariance update: P = (I-KH) P (I-KH)^T + K r K^T
+    // H = [1, 0, 0], so I-KH is the identity with column 0 subtracted by K.
+    const Eigen::Matrix<double, 3, 1> K_vec(K_yaw, K_v, K_alpha);
+    Eigen::Matrix3d A = Eigen::Matrix3d::Identity();
+    A.col(0) -= K_vec;
+    const Eigen::Matrix3d P_upd =
+      A * model.P * A.transpose() + K_vec * r * K_vec.transpose();
 
     model.x = Eigen::Vector3d(yaw_upd, v_upd, alpha_upd);
     model.P = 0.5 * (P_upd + P_upd.transpose());
@@ -711,6 +609,18 @@ double IMMFilter::yaw_cov() const { return fused_P_yaw_; }
 double IMMFilter::v_yaw_cov() const { return fused_P_v_; }
 
 double IMMFilter::alpha_yaw_cov() const { return fused_P_alpha_; }
+
+double IMMFilter::innovation_var() const
+{
+  if (!initialized_) {
+    return 0.0;
+  }
+  size_t best = 0;
+  for (size_t i = 1; i < kModelCount; ++i) {
+    if (models_[i].mu > models_[best].mu) best = i;
+  }
+  return models_[best].innovation_var;
+}
 
 std::array<double, IMMFilter::kModelCount> IMMFilter::getModelProbs() const
 {

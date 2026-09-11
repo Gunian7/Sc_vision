@@ -64,6 +64,9 @@ public:
   double yaw_cov() const;
   double v_yaw_cov() const;
   double alpha_yaw_cov() const;
+
+  // Innovation covariance S of the highest-probability model (for monitoring)
+  double innovation_var() const;
   std::array<double, kModelCount> getModelProbs() const;
   std::array<double, kModelCount> getModelAngularVelocitys() const;
   std::array<double, kModelCount> getModelAngularAccelerations() const;

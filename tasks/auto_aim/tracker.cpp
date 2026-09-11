@@ -731,6 +731,7 @@ void Tracker::update_motion_state(Target & target, std::chrono::steady_clock::ti
   plot_json["model_alpha_slow"] = model_alphas[0];
   plot_json["model_alpha_constant"] = model_alphas[1];
   plot_json["model_alpha_variable"] = model_alphas[2];
+  plot_json["imm_innovation_var"] = spin_imm_.innovation_var();
   plotter_.plot(plot_json);
 }
 
