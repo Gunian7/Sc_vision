@@ -58,7 +58,7 @@ motion_w_low: 3.0 # rad/s 角速度阈值，区分slow/constant（IMM路径和fa
 
 motion_dw_high: 0.5 # rad/s^2 角加速度阈值，|dw|超过后更倾向判为变速旋转
 imm_transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90] # 行优先3x3模型转移矩阵(行和应为1): slow/constant/variable
-imm_r_yaw: 0.02 # IMM观测噪声R(yaw): 大=更平滑更滞后, 小=更跟随但更敏感
+imm_r_yaw: 0.06 # IMM观测噪声R(yaw)方差：按实际观测误差的平方取值，视频/高噪声≈0.06，实车≈0.02（此前此键未接通无效）
 imm_q_slow: [1e-4, 6e-2, 1e-1] # slow模型过程噪声Q[yaw,w,alpha]
 imm_q_constant: [1e-4, 2e-2, 5e-2] # constant模型过程噪声Q[yaw,w,alpha]
 imm_q_variable: [2e-4, 4e-1, 8e-1] # variable模型过程噪声Q[yaw,w,alpha]，通常应最大

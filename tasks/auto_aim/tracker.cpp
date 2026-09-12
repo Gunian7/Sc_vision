@@ -266,6 +266,7 @@ Tracker::Tracker(const std::string & config_path, Solver & solver)
     imm_params.nis_gate = yaml["imm_nis_gate"].as<double>();
   }
   spin_imm_.set_params(imm_params);
+  imm_r_yaw_ = imm_params.r_yaw;  // 接通 IMM 专用 R（此前 update 误用 measurement_noise_yaw_，imm_r_yaw 未生效）
 
   if (force_target_angular_velocity_) {
     tools::logger()->warn(
@@ -625,7 +626,7 @@ bool Tracker::update_target(std::list<Armor> & armors, std::chrono::steady_clock
       armor.ypr_in_world[0] - best_id * 2.0 * M_PI / armor_num);
 
     // IMM 并行更新旋转通道：只产出 yaw/w/alpha 给下游，不再决定 found
-    if (spin_imm_.update(observed_center_yaw, measurement_noise_yaw_)) {
+    if (spin_imm_.update(observed_center_yaw, imm_r_yaw_)) {
       // IMM 的 yaw/v_yaw/alpha_yaw 直接输出给下游，不写回 EKF
       target_.set_imm_output(spin_imm_.yaw(), spin_imm_.v_yaw(), spin_imm_.alpha_yaw());
     }

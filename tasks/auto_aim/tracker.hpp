@@ -71,6 +71,7 @@ private:
   double imm_last_w_;
   double imm_dw_lpf_;
   std::chrono::steady_clock::time_point imm_last_t_;
+  double imm_r_yaw_;  // IMM 观测噪声 R(yaw)，来自 yaml imm_r_yaw
 
   // spin_state 滞回切换：抑制单帧野值和模型概率互抖
   SpinModel confirmed_spin_state_ = SpinModel::slow;
