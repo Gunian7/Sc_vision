@@ -99,6 +99,7 @@ void IMMFilter::reset()
     model.likelihood = 0.0;
     model.innovation = 0.0;
     model.innovation_var = 0.0;
+    model.gated = false;
   }
 }
 
@@ -473,9 +474,11 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
 
     // χ² outlier gate: an implausible observation must not correct the model
     if (innovation * innovation / S > params_.nis_gate) {
+      model.gated = true;
       model.likelihood = 1.0;
       return true;  // fused 状态保持 predict 的预测值
     }
+    model.gated = false;
 
     // Kalman gain for 3x1 H = [1, 0, 0]
     const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
@@ -541,10 +544,11 @@ bool IMMFilter::update(double observed_yaw, double r_yaw)
 
     const double mahalanobis = innovation * innovation / S;
     double likelihood = kEps;
+    model.gated = mahalanobis > params_.nis_gate;
 
     // χ² outlier gate: an implausible observation must not correct the model,
     // 其似然被压到下限，模型概率自然回落而不会被野值拉满
-    if (mahalanobis <= params_.nis_gate) {
+    if (!model.gated) {
       // Kalman gain for 3x1 H = [1, 0, 0]
       const double K_yaw = model.P(kYawIdx, kYawIdx) / S;
       const double K_v = model.P(kVIdx, kYawIdx) / S;
@@ -633,6 +637,30 @@ double IMMFilter::innovation_var() const
     if (models_[i].mu > models_[best].mu) best = i;
   }
   return models_[best].innovation_var;
+}
+
+double IMMFilter::innovation() const
+{
+  if (!initialized_) {
+    return 0.0;
+  }
+  size_t best = 0;
+  for (size_t i = 1; i < kModelCount; ++i) {
+    if (models_[i].mu > models_[best].mu) best = i;
+  }
+  return models_[best].innovation;
+}
+
+bool IMMFilter::last_update_gated() const
+{
+  if (!initialized_) {
+    return false;
+  }
+  size_t best = 0;
+  for (size_t i = 1; i < kModelCount; ++i) {
+    if (models_[i].mu > models_[best].mu) best = i;
+  }
+  return models_[best].gated;
 }
 
 std::array<double, IMMFilter::kModelCount> IMMFilter::getModelProbs() const

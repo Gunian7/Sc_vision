@@ -23,6 +23,7 @@ public:
     double likelihood = 0.0;
     double innovation = 0.0;
     double innovation_var = 0.0;
+    bool gated = false;  // this model's last update was rejected by the chi-square gate
   };
 
   struct Params
@@ -68,6 +69,10 @@ public:
 
   // Innovation covariance S of the highest-probability model (for monitoring)
   double innovation_var() const;
+
+  // Innovation and gate status of the highest-probability model (for monitoring)
+  double innovation() const;
+  bool last_update_gated() const;
   std::array<double, kModelCount> getModelProbs() const;
   std::array<double, kModelCount> getModelAngularVelocitys() const;
   std::array<double, kModelCount> getModelAngularAccelerations() const;
